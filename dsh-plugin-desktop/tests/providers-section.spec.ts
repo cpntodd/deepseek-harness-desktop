@@ -8,6 +8,7 @@ import {
   deriveKeyRef,
   sortProviderRowsByName,
   SUBSCRIPTION_PROVIDER_IDS,
+  validateProviderRoute,
 } from '../src/client/ProvidersSection.tsx'
 import type { ProviderKeyRow } from '../src/client/ProvidersSection.tsx'
 import { en } from '../src/client/providers-locales.ts'
@@ -52,7 +53,7 @@ function makeProvider(
 }
 
 describe('Providers settings section registration', () => {
-  it('registers the combined section shadowing upstream Models (id models, priority -1, order 10)', () => {
+  it('registers the combined Models section (id models, priority -1, order 10)', () => {
     const { ctx, registrations } = createHarness()
     applyProvidersClient(ctx)
 
@@ -62,7 +63,7 @@ describe('Providers settings section registration', () => {
     expect(section?.priority).toBe(-1)
     expect(section?.order).toBe(10)
     const label = section?.label as (() => string) | undefined
-    expect(label?.()).toBe('Providers')
+    expect(label?.()).toBe('Models')
   })
 
   it('injects the api, rpc, and both translate faces', () => {
@@ -84,6 +85,22 @@ describe('provider key helpers', () => {
   it('deriveKeyRef upper-cases and underscores the route', () => {
     expect(deriveKeyRef('deepseek-official')).toBe('DEEPSEEK_OFFICIAL_API_KEY')
     expect(deriveKeyRef('minimax-cn')).toBe('MINIMAX_CN_API_KEY')
+  })
+
+  it('validateProviderRoute accepts lowercase route ids with single hyphens', () => {
+    expect(validateProviderRoute('my-provider')).toBe(true)
+    expect(validateProviderRoute('openai')).toBe(true)
+    expect(validateProviderRoute('a')).toBe(true)
+    expect(validateProviderRoute('grok-4-5')).toBe(true)
+  })
+
+  it('validateProviderRoute rejects uppercase, separators, and empty routes', () => {
+    expect(validateProviderRoute('My-Provider')).toBe(false)
+    expect(validateProviderRoute('my_provider')).toBe(false)
+    expect(validateProviderRoute('-leading')).toBe(false)
+    expect(validateProviderRoute('trailing-')).toBe(false)
+    expect(validateProviderRoute('')).toBe(false)
+    expect(validateProviderRoute('with space')).toBe(false)
   })
 
   it('apiKeyEnvOf reads a profile reference from a namespace value', () => {

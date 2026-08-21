@@ -27,3 +27,12 @@
     printUrl: false
     surfaceContext: true
     trustedHosts: []
+
+# The desktop owns the provider configuration page: disable the upstream
+# ui-settings-models section (and its first-run onboarding dialogs) so the
+# desktop's combined Models page is the single provider surface. Keeping both
+# would list two settings tabs (the nav projects every raw settings.section
+# entry), and the desktop page covers API keys, subscriptions, and adding
+# providers.
+- id: ui-settings-models
+  disabled: true

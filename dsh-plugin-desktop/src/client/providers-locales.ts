@@ -1,8 +1,8 @@
-/** Desktop-owned Providers settings copy (the combined API-key + Subscriptions page). */
+/** Desktop-owned Models settings copy (the combined API-key + Subscriptions page). */
 
 export const zh = {
-  nav: '服务商',
-  title: '服务商',
+  nav: '模型',
+  title: '模型',
   intro: '统一管理模型服务商的 API 密钥与订阅登录。',
   configured: '已配置',
   keyLabel: 'API 密钥',
@@ -14,13 +14,24 @@ export const zh = {
   loadFailed: '无法加载服务商。',
   retry: '重试',
   unavailable: '连接不可用，无法加载服务商。',
+  add: '添加',
+  addProvider: '添加服务商',
+  routeLabel: '路由标识',
+  routePlaceholder: '例如 my-provider',
+  routeInvalid: '路由标识仅允许小写字母、数字与连字符。',
+  routeTaken: '该路由标识已被使用。',
+  displayNameLabel: '显示名称',
+  displayNamePlaceholder: '例如 My Provider',
+  creating: '正在添加…',
+  createProvider: '添加服务商',
+  cancel: '取消',
 } as const
 
 export type ProvidersKey = keyof typeof zh
 
 export const en: Record<ProvidersKey, string> = {
-  nav: 'Providers',
-  title: 'Providers',
+  nav: 'Models',
+  title: 'Models',
   intro: 'Manage model-provider API keys and subscription logins in one place.',
   configured: 'Configured',
   keyLabel: 'API key',
@@ -32,4 +43,15 @@ export const en: Record<ProvidersKey, string> = {
   loadFailed: 'Providers could not be loaded.',
   retry: 'Try again',
   unavailable: 'Connection unavailable; providers cannot be loaded.',
+  add: 'Add',
+  addProvider: 'Add provider',
+  routeLabel: 'Route id',
+  routePlaceholder: 'e.g. my-provider',
+  routeInvalid: 'Route id may contain only lowercase letters, digits, and hyphens.',
+  routeTaken: 'That route id is already in use.',
+  displayNameLabel: 'Display name',
+  displayNamePlaceholder: 'e.g. My Provider',
+  creating: 'Adding…',
+  createProvider: 'Add provider',
+  cancel: 'Cancel',
 }

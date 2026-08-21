@@ -38,6 +38,17 @@ export function deriveKeyRef(provider: string): string {
 }
 
 /**
+ * Validate a custom provider route id. Routes are profile keys in the
+ * `llm-pi-ai` providers dict, constrained to lowercase letters, digits, and
+ * single hyphens (matching the upstream schema's route pattern).
+ * @param route - the route id being added.
+ * @returns true when the route may be declared.
+ */
+export function validateProviderRoute(route: string): boolean {
+  return /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(route)
+}
+
+/**
  * Read a provider profile's `apiKeyEnv` credential reference from a settings
  * namespace's redacted value. `apiKeyEnv` carries role `credential-ref` (not
  * `secret`), so it survives the redaction a settings read applies.
@@ -202,6 +213,11 @@ export function ProvidersSection(props: ProvidersSectionProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [saved, setSaved] = useState<Record<string, boolean>>({})
+  const [adding, setAdding] = useState(false)
+  const [addRoute, setAddRoute] = useState('')
+  const [addDisplayName, setAddDisplayName] = useState('')
+  const [addKey, setAddKey] = useState('')
+  const [addError, setAddError] = useState<string | undefined>(undefined)
 
   const load = useCallback(async (): Promise<void> => {
     if (api === undefined) return
@@ -270,6 +286,43 @@ export function ProvidersSection(props: ProvidersSectionProps) {
   if (api === undefined || rpc === undefined) {
     return <div style={styles.section}><p style={styles.intro}>{t('unavailable')}</p></div>
   }
+
+  const addProvider = useCallback(async (): Promise<void> => {
+    if (api === undefined) return
+    const route = addRoute.trim()
+    if (!validateProviderRoute(route)) {
+      setAddError(t('routeInvalid'))
+      return
+    }
+    if (rows.some(row => row.provider.provider === route)) {
+      setAddError(t('routeTaken'))
+      return
+    }
+    const value = addKey.trim()
+    if (value.length === 0) return
+    setAdding(true)
+    setAddError(undefined)
+    try {
+      const ref = deriveKeyRef(route)
+      const profile: Record<string, unknown> = { apiKeyEnv: ref }
+      if (addDisplayName.trim().length > 0) profile.displayName = addDisplayName.trim()
+      const mutate = await api.settings.mutate({
+        ns: 'llm-pi-ai',
+        ops: [{ op: 'set', path: ['providers', route], value: profile }],
+      })
+      if (!mutate.result.ok) throw new Error(mutate.result.error.message)
+      const stored = await api.credentials.set({ ref, value })
+      if (!stored.result.ok) throw new Error(stored.result.error.message)
+      setAddRoute('')
+      setAddDisplayName('')
+      setAddKey('')
+      setAdding(false)
+      void load()
+    } catch (err) {
+      setAddError(messageOf(err))
+      setAdding(false)
+    }
+  }, [api, addRoute, addDisplayName, addKey, rows, t, load])
 
   const sortedRows = sortProviderRowsByName(rows)
 
@@ -347,6 +400,70 @@ export function ProvidersSection(props: ProvidersSectionProps) {
           )
         })}
       </ul>
+
+      {!adding && addRoute.length === 0 && (
+        <div style={styles.form}>
+          <button type="button" style={styles.button} onClick={() => setAdding(true)}>{t('addProvider')}</button>
+        </div>
+      )}
+      {(adding || addRoute.length > 0) && (
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
+            <span style={styles.name}>{t('addProvider')}</span>
+          </div>
+          <div style={styles.form}>
+            <input
+              style={styles.input}
+              value={addRoute}
+              aria-label={t('routeLabel')}
+              placeholder={t('routePlaceholder')}
+              disabled={adding}
+              onChange={event => setAddRoute(event.target.value)}
+            />
+            <input
+              style={styles.input}
+              value={addDisplayName}
+              aria-label={t('displayNameLabel')}
+              placeholder={t('displayNamePlaceholder')}
+              disabled={adding}
+              onChange={event => setAddDisplayName(event.target.value)}
+            />
+          </div>
+          <div style={styles.form}>
+            <input
+              style={styles.input}
+              type="password"
+              autoComplete="off"
+              value={addKey}
+              aria-label={t('keyLabel')}
+              placeholder={t('keyPlaceholder')}
+              disabled={adding}
+              onChange={event => setAddKey(event.target.value)}
+            />
+            <button
+              type="button"
+              style={styles.button}
+              disabled={adding || addKey.trim().length === 0}
+              onClick={() => { void addProvider() }}
+            >
+              {adding ? t('creating') : t('createProvider')}
+            </button>
+            {!adding && (
+              <button
+                type="button"
+                style={styles.button}
+                disabled={adding}
+                onClick={() => { setAdding(false); setAddError(undefined) }}
+              >
+                {t('cancel')}
+              </button>
+            )}
+          </div>
+          {addError !== undefined && (
+            <p style={styles.error} role="alert">{addError}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
