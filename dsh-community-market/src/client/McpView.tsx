@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { IconCordisPluginOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarketLocaleKey } from './locales.js'
 import {
   executeMcpOperation,
@@ -12,12 +13,13 @@ import type {
   MarketMcpServerView,
   McpOperationPreviewResult,
 } from '../api-types.js'
+import { marketMediaAssetUrl } from '../media/ref.js'
+import { MCP_REGISTRY_SOURCE_RECORD_ID } from '../mcp/contracts/identity.js'
 
 /** MCP servers view: browse the registry, one-click install, enable/disable. */
 export function McpView(props: {
   t: (key: MarketLocaleKey) => string
   locale: string
-  sourceRecordId: string
   requestRestart: (restartToken: string) => Promise<void>
 }): React.JSX.Element {
   const { t } = props
@@ -53,7 +55,7 @@ export function McpView(props: {
   useEffect(() => {
     void load()
     return () => { controllerRef.current?.abort() }
-  }, [props.locale, props.sourceRecordId])
+  }, [props.locale])
 
   const installedNames = new Set(installations.map(installation => installation.serverName))
 
@@ -61,10 +63,16 @@ export function McpView(props: {
     setBusy(true)
     setError(undefined)
     try {
-      const result = await previewMcpOperation(props.sourceRecordId, server.id)
+      // The MCP registry is a compiled-in source that is never part of the
+      // catalog source list, so its id cannot be derived from enabled catalog
+      // sources. The API response carries the authoritative id per server;
+      // fall back to the compiled-in id when provenance is missing.
+      const sourceRecordId = server.provenance.sourceRecordId || MCP_REGISTRY_SOURCE_RECORD_ID
+      const result = await previewMcpOperation(sourceRecordId, server.id)
       setPreview(result)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'install failed')
+    } finally {
       setBusy(false)
     }
   }
@@ -80,6 +88,7 @@ export function McpView(props: {
       await load()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'install failed')
+    } finally {
       setBusy(false)
     }
   }
@@ -174,9 +183,24 @@ export function McpView(props: {
               }}
             >
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <strong style={{ fontSize: '14px' }}>{server.displayName}</strong>
-                  <div style={{ fontSize: '12px', opacity: 0.7 }}>{server.summary}</div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
+                  <div className="dshMarketGlyph">
+                    <IconCordisPluginOutline14 size={20} />
+                    {server.media?.icon !== undefined && (
+                      <img
+                        src={marketMediaAssetUrl(server.media.icon.assetRef)}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                        onError={event => { event.currentTarget.remove() }}
+                      />
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ fontSize: '14px' }}>{server.displayName}</strong>
+                    <div style={{ fontSize: '12px', opacity: 0.7 }}>{server.summary}</div>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                   {installed && installation !== undefined ? (

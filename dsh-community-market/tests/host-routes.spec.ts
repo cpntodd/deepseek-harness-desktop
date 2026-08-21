@@ -17,9 +17,11 @@ import {
   DSHFIND_PROVIDER_ID,
 } from '../src/adapters/dshfind.js'
 import type { MarketSettingsDocument } from '../src/catalog/source-store.js'
-import type { CatalogSourceManifest, LocalSourceRecord } from '../src/contracts/index.js'
+import type { CatalogHttpClient, CatalogSourceManifest, LocalSourceRecord } from '../src/contracts/index.js'
+import { MCP_REGISTRY_ORIGIN, MCP_REGISTRY_SOURCE } from '../src/mcp/adapters/mcp-registry.js'
 import { marketRoutes, registerMarketRoutes } from '../src/host/routes.js'
 import { restrictedHttpClient } from '../src/network/restricted-http.js'
+import registrySample from './fixtures/mcp-registry-sample.json' with { type: 'json' }
 
 type RouteHandler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
 
@@ -100,6 +102,7 @@ const standardSource = (overrides: Partial<LocalSourceRecord> = {}): LocalSource
 async function startMarketServer(
   initialSources: readonly LocalSourceRecord[],
   sharedSettings?: SharedMarketSettings,
+  mcpHttpClient?: CatalogHttpClient,
 ): Promise<MarketServer> {
   const routes = new Map<string, RouteHandler>()
   const settings = sharedSettings ?? { document: { sources: initialSources } }
@@ -137,7 +140,7 @@ async function startMarketServer(
     },
     logger: { error: vi.fn() },
   } as unknown as Context
-  const disposeRoutes = registerMarketRoutes(ctx, scope)
+  const disposeRoutes = registerMarketRoutes(ctx, scope, undefined, undefined, undefined, undefined, mcpHttpClient)
   return {
     baseUrl: `http://127.0.0.1:${String(port)}`,
     close: async () => {
@@ -542,6 +545,71 @@ describe('community market Host routes', () => {
       await vi.waitFor(() => { expect(externalSignal?.aborted).toBe(true) })
     } finally {
       controller.abort()
+      await server.close()
+    }
+  })
+
+  it('exposes MCP servers whose provenance carries the built-in registry source id', async () => {
+    const getJson = vi.fn(async () => ({
+      value: registrySample,
+      finalUrl: `${MCP_REGISTRY_ORIGIN}/v0.1/servers?limit=50`,
+    }))
+    const server = await startMarketServer([], undefined, { getJson } as never)
+    try {
+      const response = await readRoute(server, marketRoutes.mcpServers)
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.servers.length).toBeGreaterThan(0)
+      for (const entry of body.servers) {
+        expect(entry.provenance.sourceRecordId).toBe(MCP_REGISTRY_SOURCE.sourceRecordId)
+        expect(entry.provenance.providerId).toBe(MCP_REGISTRY_SOURCE.providerId)
+      }
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('previews an MCP install only for the built-in registry source id', async () => {
+    const getJson = vi.fn(async () => ({
+      value: registrySample,
+      finalUrl: `${MCP_REGISTRY_ORIGIN}/v0.1/servers?limit=1`,
+    }))
+    const server = await startMarketServer([], undefined, { getJson } as never)
+    try {
+      const accepted = await fetch(`${server.baseUrl}${marketRoutes.mcpOperationPreview}`, {
+        method: 'POST',
+        headers: {
+          ...localHeaders(server),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'install',
+          sourceRecordId: MCP_REGISTRY_SOURCE.sourceRecordId,
+          itemId: 'ac.inference.sh/mcp',
+        }),
+      })
+      expect(accepted.status).toBe(200)
+      const preview = await accepted.json()
+      expect(preview.previewId).toBeTruthy()
+      expect(preview.serverName).toBeTruthy()
+      expect(preview.method).toMatchObject({ kind: 'streamable-http' })
+
+      const rejected = await fetch(`${server.baseUrl}${marketRoutes.mcpOperationPreview}`, {
+        method: 'POST',
+        headers: {
+          ...localHeaders(server),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'install',
+          sourceRecordId: builtInSource().sourceRecordId,
+          itemId: 'ac.inference.sh/mcp',
+        }),
+      })
+      expect(rejected.status).toBe(400)
+      await expect(rejected.json()).resolves.toMatchObject({ code: 'source-required' })
+    } finally {
       await server.close()
     }
   })

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { compare as semverCompare, valid as semverValid } from 'semver'
 import type { LocalSourceRecord } from '../../contracts/types.js'
+import { MCP_REGISTRY_SOURCE_RECORD_ID } from '../contracts/identity.js'
 import { parseMcpRegistryList, type McpRegistryServerEntry } from '../contracts/schemas.js'
 import type {
   McpCatalogAdapter,
@@ -23,7 +24,7 @@ export const MCP_REGISTRY_ADAPTER_ID = 'market.mcp-registry-v1'
 
 /** The single compiled-in MCP source for v1; never entered into the catalog source list. */
 export const MCP_REGISTRY_SOURCE: LocalSourceRecord = {
-  sourceRecordId: 'built-in-mcp-registry',
+  sourceRecordId: MCP_REGISTRY_SOURCE_RECORD_ID,
   registrationKind: 'built-in',
   adapterId: MCP_REGISTRY_ADAPTER_ID,
   providerId: MCP_REGISTRY_PROVIDER_ID,

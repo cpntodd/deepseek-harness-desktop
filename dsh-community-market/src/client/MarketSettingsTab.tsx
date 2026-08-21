@@ -1168,7 +1168,6 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
           <McpView
             t={t}
             locale={readLocale()}
-            sourceRecordId={enabledSourceIds(state?.sources ?? [])[0] ?? ''}
             requestRestart={async (restartToken) => {
               await runDesktopAction('request-restart', restartToken)
             }}

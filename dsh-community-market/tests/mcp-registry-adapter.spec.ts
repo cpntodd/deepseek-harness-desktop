@@ -11,6 +11,7 @@ import {
   normalizeServer,
 } from '../src/mcp/adapters/mcp-registry.js'
 import type { McpCatalogFetchContext, McpServerItem } from '../src/mcp/contracts/types.js'
+import { MCP_REGISTRY_SOURCE_RECORD_ID } from '../src/mcp/contracts/identity.js'
 import registrySample from './fixtures/mcp-registry-sample.json' with { type: 'json' }
 import searchSample from './fixtures/mcp-search.json' with { type: 'json' }
 
@@ -40,6 +41,12 @@ describe('MCP registry adapter', () => {
     expect(MCP_REGISTRY_ADAPTER_ID).toBe('market.mcp-registry-v1')
     expect(mcpRegistryAdapter.adapterId).toBe(MCP_REGISTRY_ADAPTER_ID)
     expect(MCP_REGISTRY_PROVIDER_ID).toBe('io.modelcontextprotocol.registry')
+  })
+
+  it('uses the exposed built-in source record id for the registry source', () => {
+    // The renderer relies on this id (from `server.provenance` or the shared
+    // constant) to preview installs; the compiled-in source must match it.
+    expect(MCP_REGISTRY_SOURCE.sourceRecordId).toBe(MCP_REGISTRY_SOURCE_RECORD_ID)
   })
 
   it('deriveMcpServerName maps reverse-DNS ids to the serverName charset', () => {

@@ -844,6 +844,7 @@ export function registerMarketRoutes(
   desktopActionsProvider?: MarketDesktopActionsProvider,
   desktopPluginsProvider?: MarketDesktopPluginsProvider,
   mcpStateProvider?: MarketDesktopMcpStateProvider,
+  mcpHttpClientOption?: CatalogHttpClient,
 ): () => void {
   const expectedPort = ctx.webServer.port
   const generationController = new AbortController()
@@ -924,7 +925,7 @@ export function registerMarketRoutes(
       syntheticProxyHostnames: [DSH_1024STORE_HOSTNAME, 'github.com', 'avatars.githubusercontent.com'],
     }),
   })
-  const mcpHttpClient = createCachedCatalogHttpClient(
+  const mcpHttpClient = mcpHttpClientOption ?? createCachedCatalogHttpClient(
     createRestrictedHttpClient({
       // This exact hostname is compiled into the reviewed MCP registry adapter.
       syntheticProxyHostnames: [MCP_REGISTRY_HOSTNAME],
