@@ -6,7 +6,7 @@
   Everything is a plugin — the desktop itself is a plugin.
 </p>
 
-<p align="center"><sub>An independent community project, not affiliated with, authorized by, or endorsed by DeepSeek.<br>No DeepSeek employee or official upstream DeepSeek Harness team member currently participates in this repository; upstream contributors shown by GitHub are inherited from synchronized fork history.<br><a href="README.md">中文</a> · English</sub></p>
+<p align="center"><sub>An independent community project, not affiliated with, authorized by, or endorsed by DeepSeek.<br>No DeepSeek employee or official upstream DeepSeek Harness team member currently participates in this repository; upstream contributors shown by GitHub are inherited from synchronized fork history.<br><a href="README.zh.md">中文</a> · English</sub></p>
 
 <p align="center">
   <img src="assets/desktop-hero-en.png" alt="DSH Desktop, an open-source desktop client built on DeepSeek Harness" width="100%">
@@ -18,7 +18,7 @@
   <a href="https://github.com/anywhere-labs/deepseek-harness-desktop"><img src="https://img.shields.io/github/stars/anywhere-labs/deepseek-harness-desktop?style=flat&amp;label=%E2%98%85&amp;color=08C" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <a href="https://discord.gg/TJeGqKRNM"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Join Discord"></a>
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Supported platforms: macOS and Windows">
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux (community build)">
 </p>
 
 <p align="center">
@@ -31,12 +31,13 @@ DSH Desktop integrates the local Web UI, Host service, and plugin system from [D
 
 ## Download and install
 
-Current release installers support Windows x64 and macOS Universal. No extra environment is needed — download, install, and start using it with one click.
+Current release installers support Windows x64 and macOS Universal. No extra environment is needed — download, install, and start using it with one click. Linux has no official installer; build and run it from source instead (see [Development](#development)).
 
 | Platform | Download | Installation |
 | --- | --- | --- |
 | Windows x64 | [Download installer](https://www.dshdesktop.cn/api/downloads/windows) | Run the NSIS installer and follow its prompts |
 | macOS Universal | [Download DMG](https://www.dshdesktop.cn/api/downloads/mac) | Open the DMG and drag DSH Desktop into Applications |
+| Linux | — | [Build from source](#build-and-run-from-source-linux) |
 
 See the [user guide](docs/user-guide.en.md) and [FAQ](docs/faq.en.md) for plugin commands, platform details, and troubleshooting.
 
@@ -144,6 +145,43 @@ corepack yarn dev
 ```
 
 Use `corepack yarn check` for the headless gate. The [architecture](docs/architecture.en.md) and package [`README`](dsh-plugin-desktop/README.md) describe the full build, test, and release boundaries. See [CONTRIBUTING.en.md](CONTRIBUTING.en.md) for how to contribute.
+
+### Build and run from source (Linux)
+
+<a id="build-and-run-from-source-linux"></a>
+
+Linux has no official installer, but the app builds and runs from source. It is a community-supported workflow and is not covered by the Windows/macOS release pipeline. Verified with Node.js 24, Yarn 4.18.0, and pnpm 11.
+
+```sh
+# Clone with the pinned upstream submodule
+git clone --recursive https://github.com/cpntodd/deepseek-harness-desktop.git
+cd deepseek-harness-desktop
+
+# Root Yarn workspace (Yarn 4.18.0 is pinned via packageManager; corepack enables it)
+corepack yarn install --immutable
+
+# Upstream submodule keeps its own pnpm workspace.
+# CI=true skips the lefthook git-hook installer, which cannot run inside a git
+# submodule (it tries to enable extensions.worktreeConfig and fails). This is a
+# dev-only hook manager — not needed to build or run.
+cd deepseek-harness
+CI=true corepack pnpm install --frozen-lockfile
+cd ..
+
+# Build the upstream harness, then the desktop app
+CI=true corepack yarn upstream:build
+corepack yarn build
+
+# Launch the desktop app
+corepack yarn start
+# or run the dev workflow: corepack yarn dev
+```
+
+Notes:
+
+- `CI=true` is only needed for the submodule install and `upstream:build` steps, because both re-run the submodule's `postinstall` (lefthook). The root `corepack yarn build` runs without it.
+- First launch materializes the profile directory (`~/.dsh/profiles/desktop`) and writes user data under `~/.config/DSH Desktop/`; the "healthy profile checkpoints are unavailable" log line on first run is expected.
+- A `[SharpElectronLinux] Binaries provided by Electron are incompatible with sharp` warning at launch is a known, non-fatal issue.
 
 ## Community
 
