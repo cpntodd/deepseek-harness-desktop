@@ -60,6 +60,7 @@ import {
 import { DesktopProfileService } from './profile-service.ts'
 import { DesktopActionsService } from './desktop-actions.ts'
 import { DesktopPluginsService } from './desktop-plugins.ts'
+import { DesktopMcpService } from './desktop-mcp.ts'
 import {
   desktopMarketSnapshotWithEffective,
   readDesktopMarketStateForUserData,
@@ -462,6 +463,7 @@ async function start(): Promise<void> {
     const releasePnpmRuntime = generation.own(() => { pnpmRuntime.dispose() })
     const selectionStatePath = join(app.getPath('userData'), 'profile-selection', 'state.json')
     const pluginManagementStatePath = join(app.getPath('userData'), 'plugin-management', 'state.json')
+    const mcpStatePath = join(app.getPath('userData'), 'plugin-management', 'desktop-mcp.json')
     const startupRecoveryStatePath = join(app.getPath('userData'), 'startup-recovery', 'state.json')
     startupStage = 'profile-selection'
     lifecycleRecorder.transitionStartupStage(startupStage)
@@ -559,6 +561,7 @@ async function start(): Promise<void> {
       pluginManagementStatePath,
       marketSelection,
       startupRecoveryStatePath,
+      mcpStatePath,
     )
     if (profileCheckpoint === undefined) {
       try {
@@ -694,6 +697,10 @@ async function start(): Promise<void> {
             statePath: pluginManagementStatePath,
             recoveryStatePath: startupRecoveryStatePath,
             installAnchor: desktopInstallAnchor(),
+          })
+          await hostCtx.plugin(DesktopMcpService, {
+            profileName: activeProfileName,
+            statePath: mcpStatePath,
           })
         }
         if (logSink !== undefined) {

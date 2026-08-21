@@ -37,6 +37,7 @@ import type {
   MarketStateResponse,
 } from '../api-types.js'
 import { marketMediaAssetUrl } from '../media/ref.js'
+import { McpView } from './McpView.js'
 import {
   executeMarketOperation,
   mutateMarketSource,
@@ -51,7 +52,7 @@ import {
 } from './api.js'
 
 type MarketItem = CatalogSnapshot['items'][number]
-export type MarketView = 'discover' | 'installable' | 'installed' | 'sources'
+export type MarketView = 'discover' | 'installable' | 'installed' | 'sources' | 'mcp'
 const INSTALLABLE_PAGE_SIZE = 50
 const INSTALL_REQUIREMENTS_DOCS = {
   en: 'https://github.com/anywhere-labs/deepseek-harness-desktop/blob/master/dsh-community-market/docs/install-and-uninstall.md',
@@ -1055,7 +1056,10 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
             <IconCheckOutline16 size={14} /><span>{t('installed')}</span>
           </Pill>
           <Pill active={view === 'sources'} aria-pressed={view === 'sources'} onClick={() => selectMarketView('sources')}>
-            <IconSettingsOutline16 size={14} /><span>{t('sources')}</span>
+            <IconGlobeOutline14 size={14} /><span>{t('sources')}</span>
+          </Pill>
+          <Pill active={view === 'mcp'} aria-pressed={view === 'mcp'} onClick={() => selectMarketView('mcp')}>
+            <IconDataOutline16 size={14} /><span>{t('mcpTab')}</span>
           </Pill>
         </div>
         <Pill className="dshMarketCurrentSource">
@@ -1149,7 +1153,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
             }}
             t={t}
           />
-        ) : (
+        ) : view === 'sources' ? (
           <SourcesView
             state={state}
             catalog={catalog}
@@ -1159,6 +1163,15 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
             onMutation={mutation => { void mutate(mutation) }}
             onAddStandard={() => setAddOpen(true)}
             t={t}
+          />
+        ) : (
+          <McpView
+            t={t}
+            locale={readLocale()}
+            sourceRecordId={enabledSourceIds(state?.sources ?? [])[0] ?? ''}
+            requestRestart={async (restartToken) => {
+              await runDesktopAction('request-restart', restartToken)
+            }}
           />
         )}
       </main>

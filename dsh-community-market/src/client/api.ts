@@ -3,6 +3,11 @@ import type {
   MarketDesktopActionResponse,
   MarketInstallableResponse,
   MarketInstallationsResponse,
+  MarketMcpInstallationsResponse,
+  MarketMcpMutationResult,
+  MarketMcpServerView,
+  McpOperationExecuteResult,
+  McpOperationPreviewResult,
   MarketOperationExecuteResponse,
   MarketOperationPreviewRequest,
   MarketOperationPreviewResponse,
@@ -157,6 +162,65 @@ export async function requestMarketRestart(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ restartToken }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+export async function readMcpServers(
+  search: string | undefined,
+  locale: string,
+  signal?: AbortSignal,
+): Promise<{ servers: MarketMcpServerView[] }> {
+  const url = new URL('/api/community-market/mcp/servers', window.location.origin)
+  url.searchParams.set('locale', locale)
+  if (search !== undefined && search.length > 0) url.searchParams.set('search', search)
+  return await readJson(await fetch(url, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+export async function previewMcpOperation(
+  sourceRecordId: string,
+  itemId: string,
+  signal?: AbortSignal,
+): Promise<McpOperationPreviewResult> {
+  return await readJson(await fetch('/api/community-market/mcp/operations/preview', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'install', sourceRecordId, itemId }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+export async function executeMcpOperation(
+  previewId: string,
+  signal?: AbortSignal,
+): Promise<McpOperationExecuteResult> {
+  return await readJson(await fetch('/api/community-market/mcp/operations/execute', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ previewId }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+export async function readMcpInstallations(signal?: AbortSignal): Promise<MarketMcpInstallationsResponse> {
+  return await readJson(await fetch('/api/community-market/mcp/installations', {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+export async function mutateMcpServer(
+  action: 'enable' | 'disable' | 'remove',
+  serverName: string,
+  signal?: AbortSignal,
+): Promise<MarketMcpMutationResult> {
+  return await readJson(await fetch('/api/community-market/mcp/mutations', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, serverName }),
     ...(signal === undefined ? {} : { signal }),
   }))
 }

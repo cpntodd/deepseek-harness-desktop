@@ -276,6 +276,39 @@ describe('desktop profile composition', {
       || row.id === DESKTOP_MARKET_IDENTITIES.dshMarket.rowId)).toBe(false)
   })
 
+  it('composes one mcp-client row per enabled MCP server and omits disabled ones', () => {
+    const home = temporaryHome()
+    const mcpStatePath = join(home, 'mcp-state.json')
+    writeFileSync(mcpStatePath, JSON.stringify({
+      version: 1,
+      profiles: [{
+        profileName: 'desktop',
+        servers: [
+          { serverName: 'example-fs', displayName: 'Filesystem', method: { kind: 'stdio', command: 'npx', args: ['-y', 'example-fs'], env: [] }, enabled: true, installedAt: '2026-08-22T00:00:00.000Z' },
+          { serverName: 'example-off', displayName: 'Off', method: { kind: 'streamable-http', url: 'https://example.com/mcp', headers: [] }, enabled: false, installedAt: '2026-08-22T00:00:00.000Z' },
+        ],
+      }],
+    }) + '\n')
+
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin', 'desktop', undefined, undefined, undefined, mcpStatePath)
+    // The composed patch list carries one flat row per enabled server. The
+    // app-boot composeEntries step resolves package names, so the assertion
+    // inspects the patch list directly (the row is provably present).
+    const mcpPatch = prepared.patches.find(patch => (patch as { id?: unknown }).id === 'mcp-example-fs')
+    expect(mcpPatch).toEqual(expect.objectContaining({
+      id: 'mcp-example-fs',
+      name: '@deepseek-ai/dsh-mcp-client',
+      config: expect.objectContaining({
+        transport: 'stdio',
+        serverName: 'example-fs',
+        command: 'npx',
+        args: ['-y', 'example-fs'],
+      }),
+    }))
+    // The disabled server is omitted entirely.
+    expect(prepared.patches.some(patch => (patch as { id?: unknown }).id === 'mcp-example-off')).toBe(false)
+  })
+
   it('inserts the community Market as one canonical row only after explicit selection', () => {
     const home = temporaryHome()
     const prepared = prepareDesktopProfile(undefined, home, 'darwin', 'desktop', undefined, {

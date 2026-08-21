@@ -34,6 +34,7 @@ import {
   desktopPluginBundleMutable,
   readDesktopDisabledBundles,
 } from './desktop-plugins.ts'
+import { readDesktopMcpServersSync, type DesktopMcpServer } from './desktop-mcp.ts'
 import {
   DESKTOP_MARKET_IDENTITIES,
   desktopMarketSnapshotWithEffective,
@@ -71,6 +72,7 @@ const DESKTOP_WINDOWS_AGENT_PRESETS_PACKAGE = 'dsh-plugin-desktop/windows-agent-
 const DEFAULT_DESKTOP_SHELL_MODE: DesktopShellMode = 'compatibility'
 const DEFAULT_DESKTOP_PORT = 0
 const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
+const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -373,6 +375,35 @@ function rowConfig(row: EntryOptions | undefined): Record<string, unknown> {
     : {}
 }
 
+/** Map an installed MCP server to its `mcp-client` configuration. */
+function mcpClientConfig(server: DesktopMcpServer): Record<string, unknown> {
+  const common = {
+    serverName: server.serverName,
+    toolCallTimeoutMs: 60_000,
+    failOnStartupError: false,
+  }
+  if (server.method.kind === 'streamable-http') {
+    return {
+      transport: 'streamable-http',
+      ...common,
+      url: server.method.url,
+      headers: {},
+    }
+  }
+  const env: Record<string, string> = {}
+  for (const variable of server.method.env) {
+    if (variable.secret !== true && variable.value !== undefined) env[variable.name] = variable.value
+  }
+  return {
+    transport: 'stdio',
+    ...common,
+    command: server.method.command,
+    args: server.method.args,
+    ...Object.keys(env).length === 0 ? {} : { env },
+    cwd: '',
+  }
+}
+
 /** Resolve a Loader row's platform gate without mutating the host process. */
 function rowDisabledOnPlatform(row: EntryOptions, platform: NodeJS.Platform): boolean {
   if (!isJsExpr(row.disabled)) return row.disabled === true
@@ -567,6 +598,7 @@ export function prepareDesktopProfile(
   pluginStatePath?: string,
   marketSelection: DesktopMarketSnapshot = DEFAULT_DESKTOP_MARKET_SNAPSHOT,
   recoveryStatePath?: string,
+  mcpStatePath?: string,
 ): PreparedDesktopProfile {
   const profileDir = profileName === DESKTOP_PROFILE_NAME
     ? ensureDesktopProfile(home)
@@ -674,6 +706,16 @@ export function prepareDesktopProfile(
     ...filteredProfile.patches,
     ...filteredHome.patches,
   ]
+  if (mcpStatePath !== undefined) {
+    for (const server of readDesktopMcpServersSync(mcpStatePath, profileName)) {
+      if (!server.enabled) continue
+      patches.push({
+        id: `mcp-${server.serverName}`,
+        name: MCP_CLIENT_PACKAGE,
+        config: mcpClientConfig(server),
+      })
+    }
+  }
   const composedRows = composeEntries([patches])
   assertUniqueEntryIds(composedRows)
   assertEffectiveMarketRows(composedRows, effectiveMarket)
