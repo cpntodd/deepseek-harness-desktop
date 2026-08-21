@@ -47,10 +47,19 @@ const EXECUTABLE_FILE_MODE = 0o700
 const PRIVATE_FILE_MODE = 0o600
 const WINDOWS_SHELL_COMMANDS = ['pwsh.exe', 'powershell.exe', 'cmd.exe'] as const
 const WINDOWS_TERMINAL_COMMAND = 'wt.exe'
+const LINUX_TERMINAL_COMMANDS = [
+  'x-terminal-emulator',
+  'gnome-terminal',
+  'konsole',
+  'xfce4-terminal',
+  'kitty',
+  'alacritty',
+  'xterm',
+] as const
 const ELECTRON_HEADERS_URL = 'https://electronjs.org/headers'
 
 /** Platforms with a native terminal launch contract owned by DSH Desktop. */
-export type DesktopTerminalPlatform = 'darwin' | 'win32'
+export type DesktopTerminalPlatform = 'darwin' | 'linux' | 'win32'
 
 /** Process launcher injected by the Electron adapter. */
 export type DesktopTerminalSpawn = (
@@ -111,6 +120,12 @@ export interface DesktopTerminalOptions {
   windowsExecutableExists?: DesktopTerminalExecutableExists
   /** Windows executable resolver; defaults to a trusted PATH/SystemRoot lookup. */
   windowsExecutableResolver?: DesktopTerminalExecutableResolver
+  /** Optional Linux terminal emulator path; discovery is skipped when provided. */
+  linuxTerminalExecutable?: string
+  /** Linux executable existence probe; defaults to `existsSync`. */
+  linuxExecutableExists?: DesktopTerminalExecutableExists
+  /** Linux executable resolver; defaults to a trusted PATH lookup. */
+  linuxExecutableResolver?: DesktopTerminalExecutableResolver
   /** Reporter attached before the platform launcher can emit an asynchronous failure. */
   onLaunchError?: (cause: Error) => void
 }
@@ -216,7 +231,7 @@ function prepareStateDirectory(stateDir: string): void {
 }
 
 /** Build a command shim that enables Electron's Node mode only for its child. */
-function macShim(appExecutable: string, binPath?: string): string {
+function posixShim(appExecutable: string, binPath?: string): string {
   const entry = binPath === undefined ? '' : ` ${quoteSh(binPath)}`
   return [
     '#!/bin/sh',
@@ -238,7 +253,7 @@ function windowsShim(): string {
 }
 
 /** Build the DSH shim with Loader internals and one process-local default profile. */
-function macDshShim(options: DesktopTerminalOptions): string {
+function posixDshShim(options: DesktopTerminalOptions): string {
   return [
     '#!/bin/sh',
     [
@@ -263,7 +278,7 @@ function windowsDshShim(): string {
 }
 
 /** Build a pnpm shim with Electron native-module settings scoped to its process tree. */
-function macPnpmShim(options: DesktopTerminalOptions): string {
+function posixPnpmShim(options: DesktopTerminalOptions): string {
   return [
     '#!/bin/sh',
     [
@@ -293,7 +308,7 @@ function windowsPnpmShim(): string {
 }
 
 /** Build a zsh startup file that preserves the user's rc and then restores desktop variables. */
-function macZshRc(options: DesktopTerminalOptions, shimDir: string): string {
+function posixZshRc(options: DesktopTerminalOptions, shimDir: string): string {
   return [
     'if [[ -n "${DSH_DESKTOP_USER_ZDOTDIR:-}" && -r "${DSH_DESKTOP_USER_ZDOTDIR}/.zshrc" ]]; then',
     '  ZDOTDIR="${DSH_DESKTOP_USER_ZDOTDIR}"',
@@ -310,7 +325,7 @@ function macZshRc(options: DesktopTerminalOptions, shimDir: string): string {
 }
 
 /** Build a bash startup file that preserves the user's rc and then restores desktop variables. */
-function macBashRc(options: DesktopTerminalOptions, shimDir: string): string {
+function posixBashRc(options: DesktopTerminalOptions, shimDir: string): string {
   return [
     'if [ -n "${DSH_DESKTOP_USER_BASHRC:-}" ] && [ -r "${DSH_DESKTOP_USER_BASHRC}" ]; then',
     '  . "${DSH_DESKTOP_USER_BASHRC}"',
@@ -326,22 +341,13 @@ function macBashRc(options: DesktopTerminalOptions, shimDir: string): string {
   ].join('\n')
 }
 
-/** Build the macOS script opened by LaunchServices in the user's terminal. */
-function macWelcome(
-  options: DesktopTerminalOptions,
-  shimDir: string,
-  bashRcPath: string,
-): string {
+/** Shared POSIX welcome banner printed before the interactive shell prompt. */
+function welcomeBanner(options: DesktopTerminalOptions): string[] {
   const commandHelp = 'dsh --dump-config'
   const pluginAdd = 'dsh plugin add <third-party-plugin>'
   const pluginRemove = 'dsh plugin remove <third-party-plugin>'
   const pluginUpdate = 'dsh plugin update'
   return [
-    '#!/bin/sh',
-    `unset ${RUN_AS_NODE}`,
-    `export ${DSH_HOME}=${quoteSh(options.homeDir)}`,
-    `export PATH=${quoteSh(shimDir)}:"\${PATH:-}"`,
-    `cd ${quoteSh(options.profileDir)}`,
     "printf '\\033[2J\\033[3J\\033[H'",
     `printf '%s\\n' ${quoteSh(`DSH Desktop ${options.productVersion} terminal`)}`,
     `printf '%s\\n' ${quoteSh(`Profile: ${options.profileName}`)}`,
@@ -354,6 +360,22 @@ function macWelcome(
     `printf '  %s\\n' ${quoteSh(pluginRemove)}`,
     `printf '  %s\\n' ${quoteSh(pluginUpdate)}`,
     `printf '%s\\n' ${quoteSh('Restart DSH Desktop after plugin changes.')}`,
+  ]
+}
+
+/** Build the macOS script opened by LaunchServices in the user's terminal. */
+function macWelcome(
+  options: DesktopTerminalOptions,
+  shimDir: string,
+  bashRcPath: string,
+): string {
+  return [
+    '#!/bin/sh',
+    `unset ${RUN_AS_NODE}`,
+    `export ${DSH_HOME}=${quoteSh(options.homeDir)}`,
+    `export PATH=${quoteSh(shimDir)}:"\${PATH:-}"`,
+    `cd ${quoteSh(options.profileDir)}`,
+    ...welcomeBanner(options),
     'case "${SHELL:-/bin/zsh}" in',
     '  */bash)',
     '    export DSH_DESKTOP_USER_BASHRC="${HOME:-}/.bashrc"',
@@ -370,6 +392,42 @@ function macWelcome(
     '    exec /bin/zsh -i',
     '    ;;',
     'esac',
+    '',
+  ].join('\n')
+}
+
+/** Build the Linux welcome script opened by the discovered terminal emulator. */
+function linuxWelcome(
+  options: DesktopTerminalOptions,
+  shimDir: string,
+  bashRcPath: string,
+): string {
+  return [
+    '#!/bin/sh',
+    `unset ${RUN_AS_NODE}`,
+    `export ${DSH_HOME}=${quoteSh(options.homeDir)}`,
+    `export PATH=${quoteSh(shimDir)}:"\${PATH:-}"`,
+    `cd ${quoteSh(options.profileDir)}`,
+    ...welcomeBanner(options),
+    `exec bash --noprofile --rcfile ${quoteSh(bashRcPath)} -i`,
+    '',
+  ].join('\n')
+}
+
+/** Build the Linux bash startup file sourced directly by the terminal launcher. */
+function linuxBashRc(options: DesktopTerminalOptions, shimDir: string): string {
+  return [
+    'if [ -n "${DSH_DESKTOP_USER_BASHRC:-}" ] && [ -r "${DSH_DESKTOP_USER_BASHRC}" ]; then',
+    '  . "${DSH_DESKTOP_USER_BASHRC}"',
+    'fi',
+    `unset ${RUN_AS_NODE}`,
+    `export ${DSH_HOME}=${quoteSh(options.homeDir)}`,
+    'case ":${PATH:-}:" in',
+    `  *:${quoteSh(shimDir)}:*) ;;`,
+    `  *) export PATH=${quoteSh(shimDir)}:"\${PATH:-}" ;;`,
+    'esac',
+    'unset DSH_DESKTOP_USER_BASHRC',
+    ...welcomeBanner(options),
     '',
   ].join('\n')
 }
@@ -428,9 +486,41 @@ function windowsCmdWelcome(): string {
   ].join('\r\n')
 }
 
+/** Generated POSIX terminal scripts shared between macOS and Linux. */
+interface PosixTerminalScripts {
+  /** Welcome filename inside the state directory, for example `welcome.command` or `welcome.sh`. */
+  welcomeFilename: string
+  /** Contents of the executable welcome script. */
+  welcomeContents: string
+  /** Contents of the bash startup file sourced by the platform launcher. */
+  bashRcContents: string
+}
+
+/** Create the POSIX command shims and startup scripts shared by macOS and Linux. */
+function preparePosixTerminalFiles(
+  options: DesktopTerminalOptions,
+  shimDir: string,
+  scripts: PosixTerminalScripts,
+): DesktopTerminalFiles {
+  const files: DesktopTerminalFiles = {
+    shimDir,
+    dshShimPath: join(shimDir, 'dsh'),
+    pnpmShimPath: join(shimDir, 'pnpm'),
+    nodeShimPath: join(shimDir, 'node'),
+    welcomePath: join(options.stateDir, scripts.welcomeFilename),
+  }
+  replacePrivateFile(files.dshShimPath, posixDshShim(options), EXECUTABLE_FILE_MODE)
+  replacePrivateFile(files.pnpmShimPath, posixPnpmShim(options), EXECUTABLE_FILE_MODE)
+  replacePrivateFile(files.nodeShimPath, posixShim(options.appExecutable), EXECUTABLE_FILE_MODE)
+  replacePrivateFile(join(options.stateDir, '.zshrc'), posixZshRc(options, shimDir), PRIVATE_FILE_MODE)
+  replacePrivateFile(join(options.stateDir, 'bashrc'), scripts.bashRcContents, PRIVATE_FILE_MODE)
+  replacePrivateFile(files.welcomePath, scripts.welcomeContents, EXECUTABLE_FILE_MODE)
+  return files
+}
+
 /** Create command shims and the interactive welcome script. */
 function prepareDesktopTerminalFiles(options: DesktopTerminalOptions): DesktopTerminalFiles {
-  if (options.platform !== 'darwin' && options.platform !== 'win32') {
+  if (options.platform !== 'darwin' && options.platform !== 'linux' && options.platform !== 'win32') {
     throw new Error(`dsh-plugin-desktop: terminal is unsupported on ${options.platform}`)
   }
   assertDesktopProfileName(options.profileName)
@@ -450,21 +540,20 @@ function prepareDesktopTerminalFiles(options: DesktopTerminalOptions): DesktopTe
   const shimDir = join(options.stateDir, 'bin')
   prepareStateDirectory(shimDir)
   if (options.platform === 'darwin') {
-    const files: DesktopTerminalFiles = {
-      shimDir,
-      dshShimPath: join(shimDir, 'dsh'),
-      pnpmShimPath: join(shimDir, 'pnpm'),
-      nodeShimPath: join(shimDir, 'node'),
-      welcomePath: join(options.stateDir, 'welcome.command'),
-    }
     const bashRcPath = join(options.stateDir, 'bashrc')
-    replacePrivateFile(files.dshShimPath, macDshShim(options), EXECUTABLE_FILE_MODE)
-    replacePrivateFile(files.pnpmShimPath, macPnpmShim(options), EXECUTABLE_FILE_MODE)
-    replacePrivateFile(files.nodeShimPath, macShim(options.appExecutable), EXECUTABLE_FILE_MODE)
-    replacePrivateFile(join(options.stateDir, '.zshrc'), macZshRc(options, shimDir), PRIVATE_FILE_MODE)
-    replacePrivateFile(bashRcPath, macBashRc(options, shimDir), PRIVATE_FILE_MODE)
-    replacePrivateFile(files.welcomePath, macWelcome(options, shimDir, bashRcPath), EXECUTABLE_FILE_MODE)
-    return files
+    return preparePosixTerminalFiles(options, shimDir, {
+      welcomeFilename: 'welcome.command',
+      welcomeContents: macWelcome(options, shimDir, bashRcPath),
+      bashRcContents: posixBashRc(options, shimDir),
+    })
+  }
+  if (options.platform === 'linux') {
+    const bashRcPath = join(options.stateDir, 'bashrc')
+    return preparePosixTerminalFiles(options, shimDir, {
+      welcomeFilename: 'welcome.sh',
+      welcomeContents: linuxWelcome(options, shimDir, bashRcPath),
+      bashRcContents: linuxBashRc(options, shimDir),
+    })
   }
   if (options.platform === 'win32') {
     const windowsCmdWelcomePath = join(options.stateDir, 'welcome.cmd')
@@ -671,6 +760,63 @@ function windowsLaunchBroker(
   ].join('\r\n')
 }
 
+/** Resolve a Linux terminal emulator command from the inherited PATH. */
+function defaultLinuxExecutableResolver(
+  command: string,
+  environment: Readonly<NodeJS.ProcessEnv>,
+  exists: DesktopTerminalExecutableExists,
+): string | undefined {
+  const inheritedPath = environment[PATH]
+  if (inheritedPath === undefined) return undefined
+  for (const dir of inheritedPath.split(':')) {
+    if (dir.length === 0) continue
+    const candidate = join(dir, command)
+    if (exists(candidate)) return candidate
+  }
+  return undefined
+}
+
+/** Arguments one Linux terminal emulator places before the bash child command. */
+function linuxTerminalArgs(executable: string, child: readonly string[]): string[] {
+  if (basename(executable) === 'gnome-terminal') return ['--', ...child]
+  return ['-e', ...child]
+}
+
+interface ResolvedLinuxTerminal {
+  executable: string
+  args: string[]
+}
+
+/** Resolve the preferred Linux terminal emulator and its bash child argv. */
+function resolveLinuxTerminal(
+  options: DesktopTerminalOptions,
+  environment: Readonly<NodeJS.ProcessEnv>,
+): ResolvedLinuxTerminal {
+  const bashRcPath = join(options.stateDir, 'bashrc')
+  const child = ['bash', '--noprofile', '--rcfile', bashRcPath, '-i']
+  if (options.linuxTerminalExecutable !== undefined) {
+    assertScriptValue('Linux terminal executable', options.linuxTerminalExecutable)
+    return {
+      executable: options.linuxTerminalExecutable,
+      args: linuxTerminalArgs(options.linuxTerminalExecutable, child),
+    }
+  }
+  const exists = options.linuxExecutableExists ?? existsSync
+  const resolveExecutable = options.linuxExecutableResolver ?? defaultLinuxExecutableResolver
+  for (const command of LINUX_TERMINAL_COMMANDS) {
+    const executable = resolveExecutable(command, environment, exists)
+    if (executable === undefined) continue
+    assertScriptValue(`${command} executable`, executable)
+    return {
+      executable,
+      args: linuxTerminalArgs(executable, child),
+    }
+  }
+  throw new Error(
+    'dsh-plugin-desktop: terminal requires a terminal emulator (x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, or xterm) on Linux',
+  )
+}
+
 /** Report a launcher error without leaving an unhandled EventEmitter error. */
 function reportLaunchError(options: DesktopTerminalOptions, cause: Error): void {
   if (options.onLaunchError !== undefined) {
@@ -703,6 +849,10 @@ export function openDesktopTerminal(options: DesktopTerminalOptions): DesktopTer
   if (options.platform === 'darwin') {
     command = '/usr/bin/open'
     args = ['-a', 'Terminal', files.welcomePath]
+  } else if (options.platform === 'linux') {
+    const terminal = resolveLinuxTerminal(options, env)
+    command = terminal.executable
+    args = terminal.args
   } else {
     const shell = resolveWindowsShell(options, env)
     const shellArgs = windowsShellArgv(shell, files)
