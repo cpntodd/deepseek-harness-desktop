@@ -152,14 +152,7 @@ export function apply(ctx: Context, config: Config): void {
   const settings = ctx.settings.register(
     DESKTOP_SETTINGS_NAMESPACE,
     DesktopSettingsSchema,
-    {
-      applies: 'restart',
-      validate: (value) => {
-        if (value.mode === 'advanced' && runtime.platform === 'linux') {
-          throw new Error('dsh-plugin-desktop: advanced shell mode is supported on macOS and Windows')
-        }
-      },
-    },
+    { applies: 'restart' },
   )
   const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
   ctx.on('webserver/index-inject', table => {

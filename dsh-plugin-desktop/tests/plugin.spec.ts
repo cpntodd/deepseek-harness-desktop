@@ -397,15 +397,13 @@ describe('desktop Host plugin', () => {
     expect(() => apply(harness.ctx, config)).toThrow('requires a loopback Web server')
   })
 
-  it('refuses advanced settings on Linux before persistence', () => {
+  it('accepts advanced settings on Linux', () => {
     const harness = createHarness('linux')
     apply(harness.ctx, config)
     const register = vi.mocked(harness.ctx.settings.register)
     const options = register.mock.calls[0]?.[2]
 
-    expect(() => options?.validate?.({ mode: 'advanced' })).toThrow(
-      'supported on macOS and Windows',
-    )
-    expect(() => options?.validate?.({ mode: 'compatibility' })).not.toThrow()
+    expect(options).not.toHaveProperty('validate')
+    expect(options).toEqual(expect.objectContaining({ applies: 'restart' }))
   })
 })

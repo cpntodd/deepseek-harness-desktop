@@ -100,7 +100,10 @@ export function advancedWindowOptions(
       thickFrame: true,
     }
   }
-  throw new Error('dsh-plugin-desktop: advanced shell mode is supported on macOS and Windows')
+  // Linux: keep the base native window (standard frame, no custom materials).
+  // Advanced mode is desktop-supported on every platform; only the
+  // platform-native glass treatments are darwin/win32-specific.
+  return options
 }
 
 /**

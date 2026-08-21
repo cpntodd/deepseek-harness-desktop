@@ -120,12 +120,23 @@ describe('compatibility BrowserWindow options', () => {
     }))
   })
 
-  it('rejects advanced mode on Linux', () => {
-    expect(() => advancedWindowOptions(
+  it('uses the base native window in advanced mode on Linux', () => {
+    const options = advancedWindowOptions(
       { ...spec, mode: 'advanced' },
       {} as NativeImage,
       'linux',
       preload,
-    )).toThrow('supported on macOS and Windows')
+    )
+
+    expect(options).toEqual(expect.objectContaining({
+      width: spec.width,
+      height: spec.height,
+      minWidth: spec.minWidth,
+      minHeight: spec.minHeight,
+      show: false,
+    }))
+    expect(options).not.toHaveProperty('titleBarStyle')
+    expect(options).not.toHaveProperty('backgroundMaterial')
+    expect(options).not.toHaveProperty('vibrancy')
   })
 })
