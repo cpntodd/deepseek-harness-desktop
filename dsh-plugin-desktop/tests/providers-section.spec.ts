@@ -6,7 +6,10 @@ import {
   apiKeyEnvOf,
   buildProviderRows,
   deriveKeyRef,
+  sortProviderRowsByName,
+  SUBSCRIPTION_PROVIDER_IDS,
 } from '../src/client/ProvidersSection.tsx'
+import type { ProviderKeyRow } from '../src/client/ProvidersSection.tsx'
 import { en } from '../src/client/providers-locales.ts'
 
 /**
@@ -33,6 +36,19 @@ function createHarness(): { ctx: ClientContext; registrations: Array<Record<stri
     slots: { inject, register },
   } as unknown as ClientContext
   return { ctx, registrations }
+}
+
+/** A configured credential view (writable, no source). */
+const configured: CredentialView = { configured: true, writable: true }
+
+/** Build a minimal directory entry for a provider route. */
+function makeProvider(
+  id: string,
+  displayName: string,
+  settingsNs = 'llm-pi-ai',
+  settingsPath: string[] = [],
+): ConfigurableProviderView {
+  return { provider: id, displayName, settingsNs, settingsPath, active: true }
 }
 
 describe('Providers settings section registration', () => {
@@ -78,17 +94,91 @@ describe('provider key helpers', () => {
     expect(apiKeyEnvOf(undefined, [])).toBeUndefined()
   })
 
-  it('buildProviderRows derives refs from apiKeyEnv or the conventional reference', () => {
+  it('buildProviderRows keeps only configured, non-subscription providers', () => {
     const providers: ConfigurableProviderView[] = [
-      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-      { provider: 'openai', displayName: 'OpenAI', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
+      makeProvider('deepseek-official', 'DeepSeek', 'llm-deepseek'),
+      makeProvider('anthropic', 'Anthropic', 'llm-anthropic'),
+      makeProvider('openai', 'OpenAI'),
     ]
     const namespaces = new Map<string, { value: unknown }>([
       ['llm-deepseek', { value: { apiKeyEnv: 'DEEPSEEK_API_KEY' } }],
+      ['llm-anthropic', { value: { apiKeyEnv: 'ANTHROPIC_API_KEY' } }],
       ['llm-pi-ai', { value: { providers: {} } }],
     ])
     const credentials: Record<string, CredentialView> = {
-      DEEPSEEK_API_KEY: { configured: true, writable: true },
+      DEEPSEEK_API_KEY: configured,
+      ANTHROPIC_API_KEY: configured,
+      // openai → OPENAI_API_KEY is unconfigured and must be dropped.
+    }
+
+    const rows = buildProviderRows(providers, namespaces, credentials)
+
+    expect(rows.map(row => row.provider.provider)).toEqual(['deepseek-official', 'anthropic'])
+    expect(rows.every(row => row.configured)).toBe(true)
+  })
+
+  it('buildProviderRows excludes subscription providers even when configured', () => {
+    const providers: ConfigurableProviderView[] = [
+      makeProvider('anthropic', 'Anthropic', 'llm-anthropic'),
+      ...SUBSCRIPTION_PROVIDER_IDS.map(id => makeProvider(id, id)),
+    ]
+    const namespaces = new Map<string, { value: unknown }>([
+      ['llm-anthropic', { value: { apiKeyEnv: 'ANTHROPIC_API_KEY' } }],
+    ])
+    const credentials: Record<string, CredentialView> = {
+      ANTHROPIC_API_KEY: configured,
+      CODEX_API_KEY: configured,
+      CLAUDE_API_KEY: configured,
+      GROK_API_KEY: configured,
+      OPENAI_CODEX_API_KEY: configured,
+    }
+
+    const rows = buildProviderRows(providers, namespaces, credentials)
+
+    expect(rows.map(row => row.provider.provider)).toEqual(['anthropic'])
+    for (const id of SUBSCRIPTION_PROVIDER_IDS) {
+      expect(rows.some(row => row.provider.provider === id)).toBe(false)
+    }
+  })
+
+  it('buildProviderRows deduplicates same-service routes differing only by case', () => {
+    const providers: ConfigurableProviderView[] = [
+      makeProvider('deepseek-official', 'DeepSeek', 'llm-deepseek'),
+      makeProvider('deepseek', 'deepseek', 'llm-pi-ai', ['providers', 'deepseek']),
+      makeProvider('anthropic', 'Anthropic', 'llm-anthropic'),
+    ]
+    const namespaces = new Map<string, { value: unknown }>([
+      ['llm-deepseek', { value: {} }],
+      ['llm-pi-ai', { value: { providers: { deepseek: { apiKeyEnv: 'DEEPSEEK_API_KEY' } } } }],
+      ['llm-anthropic', { value: { apiKeyEnv: 'ANTHROPIC_API_KEY' } }],
+    ])
+    const credentials: Record<string, CredentialView> = {
+      DEEPSEEK_OFFICIAL_API_KEY: configured,
+      ANTHROPIC_API_KEY: configured,
+    }
+
+    const rows = buildProviderRows(providers, namespaces, credentials)
+
+    // Both routes display the same service name differing only by case
+    // ("DeepSeek" vs "deepseek"); the case-insensitive display-name dedupe
+    // keeps the first directory entry (deepseek-official) and drops the
+    // generic `deepseek` duplicate.
+    expect(rows.map(row => row.provider.provider)).toEqual(['deepseek-official', 'anthropic'])
+    expect(rows.some(row => row.provider.provider === 'deepseek')).toBe(false)
+  })
+
+  it('buildProviderRows derives refs from apiKeyEnv or the conventional reference', () => {
+    const providers: ConfigurableProviderView[] = [
+      makeProvider('deepseek-official', 'DeepSeek', 'llm-deepseek'),
+      makeProvider('anthropic', 'Anthropic', 'llm-anthropic'),
+    ]
+    const namespaces = new Map<string, { value: unknown }>([
+      ['llm-deepseek', { value: { apiKeyEnv: 'DEEPSEEK_API_KEY' } }],
+      ['llm-anthropic', { value: {} }],
+    ])
+    const credentials: Record<string, CredentialView> = {
+      DEEPSEEK_API_KEY: configured,
+      ANTHROPIC_API_KEY: configured,
     }
 
     const rows = buildProviderRows(providers, namespaces, credentials)
@@ -96,7 +186,17 @@ describe('provider key helpers', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]?.ref).toBe('DEEPSEEK_API_KEY')
     expect(rows[0]?.configured).toBe(true)
-    expect(rows[1]?.ref).toBe('OPENAI_API_KEY')
-    expect(rows[1]?.configured).toBe(false)
+    expect(rows[1]?.ref).toBe('ANTHROPIC_API_KEY')
+    expect(rows[1]?.configured).toBe(true)
+  })
+
+  it('sortProviderRowsByName orders by display name case-insensitively', () => {
+    const rows: ProviderKeyRow[] = [
+      { provider: makeProvider('z', 'Zebra'), ref: 'ZEBRA_API_KEY', configured: true },
+      { provider: makeProvider('a', 'alpha'), ref: 'ALPHA_API_KEY', configured: true },
+      { provider: makeProvider('m', 'MiXeD'), ref: 'MIXED_API_KEY', configured: true },
+    ]
+
+    expect(sortProviderRowsByName(rows).map(row => row.provider.displayName)).toEqual(['alpha', 'MiXeD', 'Zebra'])
   })
 })

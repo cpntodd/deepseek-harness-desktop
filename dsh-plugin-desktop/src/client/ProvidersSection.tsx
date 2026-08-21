@@ -1,13 +1,13 @@
 /**
- * Combined "Providers" settings section: the desktop-owned API-key provider
- * list (top) plus the OAuth subscription cards (bottom, the existing
- * `SubscriptionsSection` composed in). The API-key list reads the
- * configurable-provider directory, settings namespaces, and credential state
- * over the connection API, and writes keys through `credentials.set` — plus
- * an `apiKeyEnv` credential reference on `llm-pi-ai` profiles via
- * `settings.mutate`, mirroring the upstream Models page's core interaction.
- * It deliberately does NOT replicate custom-provider declaration, onboarding
- * dialogs, model discovery, or baseURL/catalog editing.
+ * Combined "Providers" settings section: one interleaved list of subscription
+ * OAuth cards (the `useSubscriptionsAuth` + `SubscriptionProviderCard` state
+ * machine) followed by the configured API-key provider rows. The API-key list
+ * reads the configurable-provider directory, settings namespaces, and
+ * credential state over the connection API, and writes keys through
+ * `credentials.set` — plus an `apiKeyEnv` credential reference on `llm-pi-ai`
+ * profiles via `settings.mutate`, mirroring the upstream Models page's core
+ * interaction. It deliberately does NOT replicate custom-provider declaration,
+ * onboarding dialogs, model discovery, or baseURL/catalog editing.
  *
  * Every color resolves through a `--dsw-alias-*` design token and every
  * user-visible string through the locale-bound `t` of the 'settings.providers'
@@ -22,7 +22,12 @@ import type {
   IApiClient,
   SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { SubscriptionsSection } from './subscriptions/SubscriptionsSection.tsx'
+import {
+  SubscriptionProviderCard,
+  SUBSCRIPTION_PROVIDERS,
+  fallbackTranslate as fallbackSubscriptionsT,
+  useSubscriptionsAuth,
+} from './subscriptions/SubscriptionsSection.tsx'
 import type { SubscriptionsSectionInjected } from './subscriptions/SubscriptionsSection.tsx'
 import { en } from './providers-locales.ts'
 import type { ProvidersKey } from './providers-locales.ts'
@@ -68,24 +73,58 @@ export interface ProviderKeyRow {
 }
 
 /**
+ * Directory entries owned by the subscription (OAuth) adapters or the
+ * harness's subscription-equivalent catalog route. Their credential is never
+ * an API key — the OAuth login cards handle them — so the API-key list must
+ * skip these routes even when a credential happens to be configured.
+ */
+export const SUBSCRIPTION_PROVIDER_IDS: readonly string[] = ['codex', 'claude', 'grok', 'openai-codex']
+
+/**
  * Join the provider directory with the resolved credential references and
  * their configured state, deriving the reference each profile resolves keys
- * through (its `apiKeyEnv`, or the conventional `<ROUTE>_API_KEY`).
+ * through (its `apiKeyEnv`, or the conventional `<ROUTE>_API_KEY`). Only
+ * configured, non-subscription providers are listed: subscription providers
+ * are handled by the OAuth cards, never as API keys. Directory routes whose
+ * display names differ only by case for the same service (e.g.
+ * `deepseek-official` "DeepSeek" vs the pi-ai catalog `deepseek` "deepseek")
+ * are deduplicated case-insensitively on the display name, keeping the first
+ * (directory-order) route and dropping the duplicate.
  * @param providers - directory entries from `llm.providers`.
  * @param namespaces - settings namespace values keyed by `ns`.
  * @param credentials - credential views keyed by reference.
- * @returns one row per directory entry.
+ * @returns one row per configured, non-subscription directory entry.
  */
 export function buildProviderRows(
   providers: readonly ConfigurableProviderView[],
   namespaces: ReadonlyMap<string, { value: unknown }>,
   credentials: Readonly<Record<string, CredentialView>>,
 ): ProviderKeyRow[] {
-  return providers.map((entry) => {
-    const ref = apiKeyEnvOf(namespaces.get(entry.settingsNs), entry.settingsPath)
-      ?? deriveKeyRef(entry.provider)
-    return { provider: entry, ref, configured: credentials[ref]?.configured === true }
-  })
+  const seen = new Set<string>()
+  return providers
+    .filter(entry => !SUBSCRIPTION_PROVIDER_IDS.includes(entry.provider))
+    .filter((entry) => {
+      const key = entry.displayName.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map((entry) => {
+      const ref = apiKeyEnvOf(namespaces.get(entry.settingsNs), entry.settingsPath)
+        ?? deriveKeyRef(entry.provider)
+      return { provider: entry, ref, configured: credentials[ref]?.configured === true }
+    })
+    .filter(row => row.configured)
+}
+
+/**
+ * Stable order for the configured API-key rows: case-insensitive display name.
+ * @param rows - the filtered rows from {@link buildProviderRows}.
+ * @returns a new array sorted by display name.
+ */
+export function sortProviderRowsByName(rows: readonly ProviderKeyRow[]): ProviderKeyRow[] {
+  return [...rows].sort((a, b) =>
+    a.provider.displayName.localeCompare(b.provider.displayName, undefined, { sensitivity: 'base' }))
 }
 
 /** Injected dependencies of {@link ProvidersSection} (slot `inject`). */
@@ -120,8 +159,7 @@ const styles: Record<string, CSSProperties> = {
   },
   title: { margin: 0, fontSize: 16, fontWeight: 600, lineHeight: '24px', color: 'var(--dsw-alias-label-primary)' },
   intro: { margin: 0, color: 'var(--dsw-alias-label-tertiary)', fontSize: 14, lineHeight: '22px' },
-  group: { display: 'flex', flexDirection: 'column', gap: 8 },
-  groupTitle: { margin: 0, fontSize: 14, fontWeight: 500, lineHeight: '22px', color: 'var(--dsw-alias-label-primary)' },
+  list: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 },
   hint: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
   error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-error-primary)' },
   card: {
@@ -148,11 +186,6 @@ const styles: Record<string, CSSProperties> = {
   },
 }
 
-/** Status dot color for one provider's configured state. */
-function dotColor(configured: boolean): string {
-  return configured ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-label-dimmed)'
-}
-
 /**
  * Render the combined Providers page.
  * @param props - the slot inject face ({@link ProvidersSectionInjected}).
@@ -161,6 +194,8 @@ function dotColor(configured: boolean): string {
 export function ProvidersSection(props: ProvidersSectionProps) {
   const { api, rpc, subscriptionsT } = props
   const t = props.t ?? fallbackTranslate
+  const subscriptionsTranslate = subscriptionsT ?? fallbackSubscriptionsT
+  const subscriptions = useSubscriptionsAuth(rpc, subscriptionsTranslate)
   const [rows, setRows] = useState<ProviderKeyRow[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [error, setError] = useState<string | undefined>(undefined)
@@ -236,67 +271,82 @@ export function ProvidersSection(props: ProvidersSectionProps) {
     return <div style={styles.section}><p style={styles.intro}>{t('unavailable')}</p></div>
   }
 
+  const sortedRows = sortProviderRowsByName(rows)
+
   return (
     <div style={styles.section}>
       <h2 style={styles.title}>{t('title')}</h2>
       <p style={styles.intro}>{t('intro')}</p>
 
-      <section style={styles.group}>
-        <h3 style={styles.groupTitle}>{t('apiKeysTitle')}</h3>
-        <p style={styles.intro}>{t('apiKeysIntro')}</p>
-        {error !== undefined && (
-          <p style={styles.error} role="alert">{error}</p>
-        )}
-        {status === 'loading' && <p style={styles.hint}>{t('loading')}</p>}
-        {status === 'error' && (
-          <div>
-            <p style={styles.error} role="alert">{`${t('loadFailed')}${error === undefined ? '' : ` ${error}`}`}</p>
-            <button type="button" style={styles.button} onClick={() => { void load() }}>{t('retry')}</button>
-          </div>
-        )}
-        {rows.map((row) => {
+      {error !== undefined && (
+        <p style={styles.error} role="alert">{error}</p>
+      )}
+      {status === 'loading' && <p style={styles.hint}>{t('loading')}</p>}
+      {status === 'error' && (
+        <div>
+          <p style={styles.error} role="alert">{`${t('loadFailed')}${error === undefined ? '' : ` ${error}`}`}</p>
+          <button type="button" style={styles.button} onClick={() => { void load() }}>{t('retry')}</button>
+        </div>
+      )}
+
+      <ul style={styles.list}>
+        {SUBSCRIPTION_PROVIDERS.map(({ id, name }) => (
+          <li key={`subscription:${id}`}>
+            <SubscriptionProviderCard
+              name={name}
+              status={subscriptions.statuses[id]}
+              error={subscriptions.errors[id]}
+              usage={subscriptions.usages[id]}
+              usageError={subscriptions.usageErrors[id]}
+              usageLoading={subscriptions.usageLoading[id] === true}
+              manualDraft={subscriptions.manualDrafts[id]}
+              onManualDraft={value => subscriptions.setManualDraft(id, value)}
+              onLogin={() => { void subscriptions.login(id) }}
+              onCancel={() => { void subscriptions.cancel(id) }}
+              onLogout={() => { void subscriptions.logout(id, name) }}
+              onSubmitManual={() => { void subscriptions.submitManual(id) }}
+              onLoadUsage={() => { void subscriptions.loadUsage(id) }}
+              t={subscriptionsTranslate}
+            />
+          </li>
+        ))}
+        {sortedRows.map((row) => {
           const draft = drafts[row.provider.provider] ?? ''
           const busy = saving[row.provider.provider] === true
           return (
-            <div key={row.provider.provider} style={styles.card}>
-              <div style={styles.cardHeader}>
-                <span style={{ ...styles.dot, background: dotColor(row.configured) }} />
-                <span style={styles.name}>{row.provider.displayName}</span>
+            <li key={`api-key:${row.provider.provider}`}>
+              <div style={styles.card}>
+                <div style={styles.cardHeader}>
+                  <span style={{ ...styles.dot, background: 'var(--dsw-alias-state-success-primary)' }} />
+                  <span style={styles.name}>{row.provider.displayName}</span>
+                </div>
+                <p style={styles.statusLine}>{t('configured')}</p>
+                {saved[row.provider.provider] === true && <p style={styles.statusLine}>{t('keySaved')}</p>}
+                <div style={styles.form}>
+                  <input
+                    style={styles.input}
+                    type="password"
+                    autoComplete="off"
+                    value={draft}
+                    aria-label={`${t('keyLabel')} — ${row.provider.displayName}`}
+                    placeholder={t('keyPlaceholder')}
+                    disabled={busy}
+                    onChange={event => setDrafts(prev => ({ ...prev, [row.provider.provider]: event.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    style={styles.button}
+                    disabled={busy || draft.trim().length === 0}
+                    onClick={() => { void saveKey(row) }}
+                  >
+                    {busy ? t('savingKey') : t('saveKey')}
+                  </button>
+                </div>
               </div>
-              <p style={styles.statusLine}>{row.configured ? t('configured') : t('notConfigured')}</p>
-              {saved[row.provider.provider] === true && <p style={styles.statusLine}>{t('keySaved')}</p>}
-              <div style={styles.form}>
-                <input
-                  style={styles.input}
-                  type="password"
-                  autoComplete="off"
-                  value={draft}
-                  aria-label={`${t('keyLabel')} — ${row.provider.displayName}`}
-                  placeholder={t('keyPlaceholder')}
-                  disabled={busy}
-                  onChange={event => setDrafts(prev => ({ ...prev, [row.provider.provider]: event.target.value }))}
-                />
-                <button
-                  type="button"
-                  style={styles.button}
-                  disabled={busy || draft.trim().length === 0}
-                  onClick={() => { void saveKey(row) }}
-                >
-                  {busy ? t('savingKey') : t('saveKey')}
-                </button>
-              </div>
-            </div>
+            </li>
           )
         })}
-      </section>
-
-      <section style={styles.group}>
-        <h3 style={styles.groupTitle}>{t('subscriptionsTitle')}</h3>
-        <SubscriptionsSection
-          rpc={rpc}
-          {...subscriptionsT === undefined ? {} : { t: subscriptionsT }}
-        />
-      </section>
+      </ul>
     </div>
   )
 }

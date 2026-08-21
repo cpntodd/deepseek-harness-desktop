@@ -75,8 +75,8 @@ export interface SubscriptionsSectionInjected {
  */
 export type SubscriptionsSectionProps = Partial<SubscriptionsSectionInjected>
 
-/** Card display metadata, in page order (names are brand names, not translated). */
-const PROVIDERS: readonly { id: SubscriptionProvider; name: string }[] = [
+/** Subscription provider cards, in page order (names are brand names, not translated). */
+export const SUBSCRIPTION_PROVIDERS: readonly { id: SubscriptionProvider; name: string }[] = [
   { id: 'codex', name: 'Codex (ChatGPT)' },
   { id: 'claude', name: 'Claude' },
   { id: 'grok', name: 'Grok (X Premium)' },
@@ -117,7 +117,7 @@ function messageOf(error: unknown): string {
  * @param params - `{name}` template params.
  * @returns the template with params substituted.
  */
-function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknown>): string {
+export function fallbackTranslate(key: SubscriptionsKey, params?: Record<string, unknown>): string {
   let text: string = en[key]
   for (const [name, value] of Object.entries(params ?? {})) {
     text = text.replaceAll(`{${name}}`, String(value))
@@ -230,14 +230,46 @@ function usageBarColor(usedPercent: number): string {
   return 'var(--dsw-alias-state-success-primary)'
 }
 
+/** Subscription auth state machine exposed to card renderers. */
+export interface SubscriptionsAuthController {
+  /** Last reported login state per provider. */
+  statuses: Partial<Record<SubscriptionProvider, ProviderStatus>>
+  /** Action failures per provider (login/logout/manual). */
+  errors: Partial<Record<SubscriptionProvider, string>>
+  /** Last `usage` answer per provider. */
+  usages: Partial<Record<SubscriptionProvider, ProviderUsage>>
+  /** Usage lookup failures per provider. */
+  usageErrors: Partial<Record<SubscriptionProvider, string>>
+  /** Providers with a `usage` call in flight. */
+  usageLoading: Partial<Record<SubscriptionProvider, boolean>>
+  /** Manual-fallback input drafts per provider. */
+  manualDrafts: Record<SubscriptionProvider, string>
+  /** Update one manual-fallback draft. */
+  setManualDraft: (provider: SubscriptionProvider, value: string) => void
+  /** Start the OAuth login for one provider. */
+  login: (provider: SubscriptionProvider) => Promise<void>
+  /** Cancel a busy login attempt for one provider. */
+  cancel: (provider: SubscriptionProvider) => Promise<void>
+  /** Submit the manual callback for one provider. */
+  submitManual: (provider: SubscriptionProvider) => Promise<void>
+  /** Log one provider out (confirms first). */
+  logout: (provider: SubscriptionProvider, name: string) => Promise<void>
+  /** Refetch one provider's usage windows. */
+  loadUsage: (provider: SubscriptionProvider) => Promise<void>
+}
+
 /**
- * The Subscriptions settings page component.
- * @param props - the slot inject face ({@link SubscriptionsSectionInjected}).
- * @returns the section body, or a notice while the RPC face is absent.
+ * React hook owning the subscription-auth state machine (see
+ * {@link SubscriptionsAuthController}). One instance backs one card list, so
+ * the combined Providers page and the standalone Subscriptions page render
+ * identical cards from identical state.
+ * @param rpc - Connection RPC caller (undefined while the face is absent).
+ * @param t - section translate ('settings.subscriptions' namespace).
  */
-export function SubscriptionsSection(props: SubscriptionsSectionProps) {
-  const { rpc } = props
-  const t = props.t ?? fallbackTranslate
+export function useSubscriptionsAuth(
+  rpc: ConnectionHandle['rpc'] | undefined,
+  t: SubscriptionsSectionInjected['t'],
+): SubscriptionsAuthController {
   const [statuses, setStatuses] = useState<Partial<Record<SubscriptionProvider, ProviderStatus>>>({})
   const [errors, setErrors] = useState<Partial<Record<SubscriptionProvider, string>>>({})
   const [manualDrafts, setManualDrafts] = useState<Record<SubscriptionProvider, string>>({
@@ -282,7 +314,7 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
     }
     if (!mountedRef.current) return
     setStatuses(response.providers)
-    for (const { id } of PROVIDERS) {
+    for (const { id } of SUBSCRIPTION_PROVIDERS) {
       const status = response.providers[id]
       if (status.loggedIn || !status.busy) stopPolling(id)
     }
@@ -300,7 +332,7 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
     void refresh().then(() => {
       if (!mountedRef.current) return
       setStatuses((current) => {
-        for (const { id } of PROVIDERS) {
+        for (const { id } of SUBSCRIPTION_PROVIDERS) {
           if (current[id]?.busy === true) startPolling(id)
         }
         return current
@@ -338,7 +370,7 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
   // logout so a re-login refetches. A failed lookup does not auto-retry — the
   // per-card Refresh button is the retry path.
   useEffect(() => {
-    for (const { id } of PROVIDERS) {
+    for (const { id } of SUBSCRIPTION_PROVIDERS) {
       const status = statuses[id]
       if (status === undefined) continue
       if (status.loggedIn) {
@@ -418,6 +450,167 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
     await refresh()
   }, [rpc, t, setProviderError, refresh])
 
+  const setManualDraft = useCallback((provider: SubscriptionProvider, value: string): void => {
+    setManualDrafts(prev => ({ ...prev, [provider]: value }))
+  }, [])
+
+  return {
+    statuses, errors, usages, usageErrors, usageLoading, manualDrafts, setManualDraft,
+    login, cancel, submitManual, logout, loadUsage,
+  }
+}
+
+/** Props of {@link SubscriptionProviderCard}: one provider's full render state. */
+export interface SubscriptionProviderCardProps {
+  /** Brand display name. */
+  name: string
+  /** Last reported login state. */
+  status: ProviderStatus | undefined
+  /** Action failure message, if any. */
+  error: string | undefined
+  /** Last `usage` answer. */
+  usage: ProviderUsage | undefined
+  /** Usage lookup failure message, if any. */
+  usageError: string | undefined
+  /** Whether a usage lookup is in flight. */
+  usageLoading: boolean
+  /** Manual-fallback input value. */
+  manualDraft: string
+  /** Update the manual-fallback input. */
+  onManualDraft: (value: string) => void
+  /** Start the OAuth login. */
+  onLogin: () => void
+  /** Cancel a busy login attempt. */
+  onCancel: () => void
+  /** Log out. */
+  onLogout: () => void
+  /** Submit the manual callback. */
+  onSubmitManual: () => void
+  /** Refetch usage. */
+  onLoadUsage: () => void
+  /** Section translate. */
+  t: SubscriptionsSectionInjected['t']
+}
+
+/**
+ * One subscription provider card (dot + name + status + login/logout actions
+ * + usage). Extracted so the combined Providers page renders subscription and
+ * API-key rows from the same card vocabulary.
+ * @param props - {@link SubscriptionProviderCardProps}.
+ */
+export function SubscriptionProviderCard(props: SubscriptionProviderCardProps) {
+  const {
+    name, status, error, usage, usageError, usageLoading,
+    manualDraft, onManualDraft, onLogin, onCancel, onLogout, onSubmitManual, onLoadUsage, t,
+  } = props
+  const busy = status?.busy === true
+  const showUsage = status?.loggedIn === true && usage?.supported !== false
+    && (usage !== undefined || usageError !== undefined || usageLoading === true)
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardHeader}>
+        <span style={{ ...styles.dot, background: dotColor(status) }} />
+        <span style={styles.name}>{name}</span>
+      </div>
+      <p style={styles.statusLine}>{statusText(t, status)}</p>
+      {status?.detail !== undefined && status.detail !== '' && (
+        <p style={styles.statusLine}>{status.detail}</p>
+      )}
+      {error !== undefined && <p style={styles.errorLine}>{error}</p>}
+      <div style={styles.actions}>
+        {!busy && status?.loggedIn !== true && (
+          <button type="button" style={styles.button} onClick={onLogin}>
+            {t('login')}
+          </button>
+        )}
+        {busy && (
+          <button type="button" style={styles.button} onClick={onCancel}>
+            {t('cancel')}
+          </button>
+        )}
+        {status?.loggedIn === true && (
+          <button type="button" style={styles.button} onClick={onLogout}>
+            {t('logout')}
+          </button>
+        )}
+      </div>
+      {showUsage && (
+        <div style={styles.usage}>
+          <div style={styles.usageHeader}>
+            <span style={styles.usageTitle}>{t('usageTitle')}</span>
+            {usage?.plan !== undefined && (
+              <span style={styles.usagePlan}>{t('usagePlan', { plan: usage.plan })}</span>
+            )}
+            <button
+              type="button"
+              style={{ ...styles.usageRefresh, ...usageLoading === true ? { opacity: 0.5, cursor: 'default' } : {} }}
+              disabled={usageLoading === true}
+              onClick={onLoadUsage}
+            >
+              {t('usageRefresh')}
+            </button>
+          </div>
+          {usage === undefined && usageError === undefined && (
+            <p style={styles.statusLine}>{t('usageLoading')}</p>
+          )}
+          {usageError !== undefined && (
+            <p style={styles.errorLine}>{t('usageError', { message: usageError })}</p>
+          )}
+          {usage?.windows !== undefined && usage.windows.length === 0 && (
+            <p style={styles.statusLine}>{t('usageEmpty')}</p>
+          )}
+          {(usage?.windows ?? []).map((window, index) => {
+            const percent = Math.min(100, Math.max(0, window.usedPercent))
+            return (
+              <div key={index} style={styles.usageRow}>
+                <div style={styles.usageMeta}>
+                  <span>{usageWindowLabel(t, window)}</span>
+                  <span>
+                    {`${String(Math.round(percent))}%`}
+                    {window.resetsAt !== undefined
+                      && ` · ${t('usageResets', { date: new Date(window.resetsAt).toLocaleString() })}`}
+                  </span>
+                </div>
+                <div style={styles.usageTrack}>
+                  <div style={{ ...styles.usageFill, width: `${String(percent)}%`, background: usageBarColor(percent) }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {busy && (
+        <details style={styles.manual}>
+          <summary>{t('manualSummary')}</summary>
+          <div style={styles.manualRow}>
+            <input
+              style={styles.manualInput}
+              value={manualDraft}
+              placeholder={t('manualPlaceholder')}
+              onChange={event => onManualDraft(event.target.value)}
+            />
+            <button type="button" style={styles.button} onClick={onSubmitManual}>
+              {t('submit')}
+            </button>
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The standalone Subscriptions settings page, kept for the `./subscriptions`
+ * package export. The combined Providers page composes these cards itself via
+ * {@link useSubscriptionsAuth} + {@link SubscriptionProviderCard}.
+ * @param props - the slot inject face ({@link SubscriptionsSectionInjected}).
+ * @returns the section body, or a notice while the RPC face is absent.
+ */
+export function SubscriptionsSection(props: SubscriptionsSectionProps) {
+  const { rpc } = props
+  const t = props.t ?? fallbackTranslate
+  const auth = useSubscriptionsAuth(rpc, t)
+
   if (rpc === undefined) {
     return <p style={styles.intro}>{t('unavailable')}</p>
   }
@@ -425,106 +618,25 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
   return (
     <div style={styles.section}>
       <p style={styles.intro}>{t('intro')}</p>
-      {PROVIDERS.map(({ id, name }) => {
-        const status = statuses[id]
-        const busy = status?.busy === true
-        const usage = usages[id]
-        const usageError = usageErrors[id]
-        // Providers without a usage endpoint answer supported:false — no block.
-        const showUsage = status?.loggedIn === true && usage?.supported !== false
-          && (usage !== undefined || usageError !== undefined || usageLoading[id] === true)
-        return (
-          <div key={id} style={styles.card}>
-            <div style={styles.cardHeader}>
-              <span style={{ ...styles.dot, background: dotColor(status) }} />
-              <span style={styles.name}>{name}</span>
-            </div>
-            <p style={styles.statusLine}>{statusText(t, status)}</p>
-            {status?.detail !== undefined && status.detail !== '' && (
-              <p style={styles.statusLine}>{status.detail}</p>
-            )}
-            {errors[id] !== undefined && <p style={styles.errorLine}>{errors[id]}</p>}
-            <div style={styles.actions}>
-              {!busy && status?.loggedIn !== true && (
-                <button type="button" style={styles.button} onClick={() => { void login(id) }}>
-                  {t('login')}
-                </button>
-              )}
-              {busy && (
-                <button type="button" style={styles.button} onClick={() => { void cancel(id) }}>
-                  {t('cancel')}
-                </button>
-              )}
-              {status?.loggedIn === true && (
-                <button type="button" style={styles.button} onClick={() => { void logout(id, name) }}>
-                  {t('logout')}
-                </button>
-              )}
-            </div>
-            {showUsage && (
-              <div style={styles.usage}>
-                <div style={styles.usageHeader}>
-                  <span style={styles.usageTitle}>{t('usageTitle')}</span>
-                  {usage?.plan !== undefined && (
-                    <span style={styles.usagePlan}>{t('usagePlan', { plan: usage.plan })}</span>
-                  )}
-                  <button
-                    type="button"
-                    style={{ ...styles.usageRefresh, ...usageLoading[id] === true ? { opacity: 0.5, cursor: 'default' } : {} }}
-                    disabled={usageLoading[id] === true}
-                    onClick={() => { void loadUsage(id) }}
-                  >
-                    {t('usageRefresh')}
-                  </button>
-                </div>
-                {usage === undefined && usageError === undefined && (
-                  <p style={styles.statusLine}>{t('usageLoading')}</p>
-                )}
-                {usageError !== undefined && (
-                  <p style={styles.errorLine}>{t('usageError', { message: usageError })}</p>
-                )}
-                {usage?.windows !== undefined && usage.windows.length === 0 && (
-                  <p style={styles.statusLine}>{t('usageEmpty')}</p>
-                )}
-                {(usage?.windows ?? []).map((window, index) => {
-                  const percent = Math.min(100, Math.max(0, window.usedPercent))
-                  return (
-                    <div key={index} style={styles.usageRow}>
-                      <div style={styles.usageMeta}>
-                        <span>{usageWindowLabel(t, window)}</span>
-                        <span>
-                          {`${String(Math.round(percent))}%`}
-                          {window.resetsAt !== undefined
-                            && ` · ${t('usageResets', { date: new Date(window.resetsAt).toLocaleString() })}`}
-                        </span>
-                      </div>
-                      <div style={styles.usageTrack}>
-                        <div style={{ ...styles.usageFill, width: `${String(percent)}%`, background: usageBarColor(percent) }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            {busy && (
-              <details style={styles.manual}>
-                <summary>{t('manualSummary')}</summary>
-                <div style={styles.manualRow}>
-                  <input
-                    style={styles.manualInput}
-                    value={manualDrafts[id]}
-                    placeholder={t('manualPlaceholder')}
-                    onChange={event => setManualDrafts(prev => ({ ...prev, [id]: event.target.value }))}
-                  />
-                  <button type="button" style={styles.button} onClick={() => { void submitManual(id) }}>
-                    {t('submit')}
-                  </button>
-                </div>
-              </details>
-            )}
-          </div>
-        )
-      })}
+      {SUBSCRIPTION_PROVIDERS.map(({ id, name }) => (
+        <SubscriptionProviderCard
+          key={id}
+          name={name}
+          status={auth.statuses[id]}
+          error={auth.errors[id]}
+          usage={auth.usages[id]}
+          usageError={auth.usageErrors[id]}
+          usageLoading={auth.usageLoading[id] === true}
+          manualDraft={auth.manualDrafts[id]}
+          onManualDraft={value => auth.setManualDraft(id, value)}
+          onLogin={() => { void auth.login(id) }}
+          onCancel={() => { void auth.cancel(id) }}
+          onLogout={() => { void auth.logout(id, name) }}
+          onSubmitManual={() => { void auth.submitManual(id) }}
+          onLoadUsage={() => { void auth.loadUsage(id) }}
+          t={t}
+        />
+      ))}
     </div>
   )
 }
