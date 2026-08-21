@@ -9,6 +9,7 @@ import { startRendererBootReporter } from './boot-health.ts'
 import { applyDesktopSettings } from './desktop-settings.ts'
 import { installDesktopDirectoryPickerBridge, requestDesktopDirectoryValidation } from './directory-picker.ts'
 import { parseDesktopClientEnvironment } from './environment.ts'
+import { applyProvidersClient } from './providers.ts'
 import { applySubscriptionsClient } from './subscriptions/index.ts'
 import { installWorkspaceFolderDrop } from './workspace-folder-drop.ts'
 
@@ -69,6 +70,7 @@ export function apply(ctx: ClientContext): void {
   if (!environment) return
   applyDesktopSettings(ctx, environment)
   applySubscriptionsClient(ctx)
+  applyProvidersClient(ctx)
   ctx.effect(
     () => startRendererBootReporter(ctx.loader),
     'dsh-plugin-desktop: renderer boot health report',

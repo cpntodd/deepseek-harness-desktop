@@ -36,23 +36,13 @@ function createHarness(): { ctx: ClientContext; registrations: Array<Record<stri
   return { ctx, registrations, commands }
 }
 
-describe('subscriptions settings section', () => {
-  it('registers the Subscriptions section directly beneath Models (order 11)', () => {
+describe('subscriptions client', () => {
+  it('does not register a settings.section (the combined Providers section owns that nav entry)', () => {
     const { ctx, registrations } = createHarness()
     applySubscriptionsClient(ctx)
 
-    const section = registrations.find(entry => entry.name === 'settings.section')
-    expect(section).toBeDefined()
-    expect(section?.id).toBe('subscriptions')
-    expect(section?.order).toBe(11)
-    const label = section?.label as (() => string) | undefined
-    expect(label?.()).toBe('Subscriptions')
-  })
-
-  it('keeps the models section ordering intact (Models at 10, Subscriptions at 11)', () => {
-    // The upstream Models section registers at order 10; our section must
-    // sit immediately beneath it in the flat nav.
-    expect(11).toBeGreaterThan(10)
+    const sections = registrations.filter(entry => entry.name === 'settings.section')
+    expect(sections).toHaveLength(0)
   })
 
   it('registers the image and video toolviews', () => {
@@ -70,5 +60,12 @@ describe('subscriptions settings section', () => {
     const speed = registrations.find(entry => entry.name === 'conversation.input.right')
     expect(speed).toBeDefined()
     expect(speed?.id).toBe('codex-speed')
+  })
+
+  it('registers the /fast slash command', () => {
+    const { ctx, commands } = createHarness()
+    applySubscriptionsClient(ctx)
+
+    expect(commands.some(cmd => cmd.name === 'fast')).toBe(true)
   })
 })

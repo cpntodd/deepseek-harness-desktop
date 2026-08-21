@@ -1,10 +1,14 @@
 /**
- * Subscription OAuth login page, browser half. Registers the Subscriptions
- * settings section; every login state fact arrives through the node half's
- * `/subscriptions-auth` RPC channel — this plugin holds no credential state of its
- * own. Section copy rides the client locale service: one 'settings.subscriptions'
- * namespace with zh/en dictionaries, rebound per read so the nav label and
- * page text follow the active locale.
+ * Subscription OAuth login, browser half. Every login state fact arrives
+ * through the node half's `/subscriptions-auth` RPC channel — this plugin
+ * holds no credential state of its own. Copy rides the client locale service:
+ * one 'settings.subscriptions' namespace with zh/en dictionaries.
+ *
+ * The Subscriptions cards no longer own a settings nav entry: the combined
+ * Providers section (`../providers.ts`) renders {@link SubscriptionsSection}
+ * beneath its API-key list. This apply registers only the non-section
+ * surfaces — the image/video toolviews, the composer Speed toggle, and the
+ * `/fast` slash command.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -16,11 +20,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the slash-command registry contract (the /fast contribution).
 import type { CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
-// `.js` extension: this package's tsconfig lacks the reference repo's
-// allowImportingTsExtensions/rewriteRelativeImportExtensions pair; under
-// nodenext the .js specifier resolves to the .tsx source (see README note).
-import { SubscriptionsSection } from './SubscriptionsSection.tsx'
-import type { SubscriptionsSectionInjected } from './SubscriptionsSection.tsx'
 import { ImageGenerateToolview, createImageLoader } from './ImageGenerateToolview.tsx'
 import type { ImageGenerateToolviewInjected } from './ImageGenerateToolview.tsx'
 import { VideoGenerateToolview, createVideoLoader } from './VideoGenerateToolview.tsx'
@@ -30,6 +29,11 @@ import type { SpeedSelectInjected } from './SpeedSelect.tsx'
 import { en, zh } from './locales.ts'
 import type { SubscriptionsKey } from './locales.ts'
 
+// The Subscriptions cards are composed into the combined Providers section
+// (`ProvidersSection.tsx`), so the section component itself is re-exported
+// rather than registered here.
+import type { SubscriptionsSectionInjected } from './SubscriptionsSection.tsx'
+export { SubscriptionsSection } from './SubscriptionsSection.tsx'
 export type { SubscriptionsSectionInjected, SubscriptionsSectionProps } from './SubscriptionsSection.tsx'
 export type { ImageGenerateToolviewInjected, ImageGenerateToolviewProps } from './ImageGenerateToolview.tsx'
 export type { VideoGenerateToolviewInjected, VideoGenerateToolviewProps } from './VideoGenerateToolview.tsx'
@@ -47,21 +51,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'settings.subscriptions'
 
 /**
- * Required services (cordis fiber inject): `slots` carries the registration
- * seat, `connection` the `/subscriptions-auth` RPC caller, and `locale` the copy
- * dictionaries.
+ * Required services (cordis fiber inject): `slots` carries the toolview and
+ * composer registrations, `connection` the `/subscriptions-auth` RPC caller,
+ * and `locale` the copy dictionaries.
  */
 export const inject = ['slots', 'connection', 'locale']
 
 /**
- * Register the Subscriptions section once the `settings.section` declaration
- * is on the ledger (the shell's apply order relative to this one is NOT
- * constrained; registration depends on the slot through `slots.inject()`).
- *
- * The section is registered at `order: 11` — directly beneath the upstream
- * "Models" section (order 10) in the flat settings nav — as the closest
- * compliant approximation of "Subscriptions under Models" (the settings shell
- * renders `settings.section` as a flat list with no nesting seam).
+ * Register the Subscriptions toolviews, composer Speed toggle, and `/fast`
+ * command. The section nav entry itself is owned by the combined Providers
+ * section; this apply contributes no `settings.section`.
  * @param ctx - client root context.
  */
 export function applySubscriptionsClient(ctx: ClientContext): void {
@@ -70,15 +69,6 @@ export function applySubscriptionsClient(ctx: ClientContext): void {
   // in the browser shell the same key holds the full client ConnectionHandle.
   const connection = ctx.get('connection') as unknown as ConnectionHandle
   const t = ctx.locale.bind(NS) as SubscriptionsSectionInjected['t']
-  const injected = (): SubscriptionsSectionInjected => ({ rpc: connection.rpc, t })
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'subscriptions',
-    order: 11,
-    // A thunk re-evaluated per read, so the nav label follows the active locale.
-    label: () => t('nav'),
-    inject: injected,
-  }, SubscriptionsSection))
 
   // The image_generate keyed toolview owns how image calls render inline; its
   // gallery bytes ride the same channel through the injected loader. The
