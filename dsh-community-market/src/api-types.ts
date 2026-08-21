@@ -1,6 +1,7 @@
 import type { CatalogSnapshot } from './contracts/generated/catalog-snapshot.js'
 import type { CatalogSourceManifest } from './contracts/generated/catalog-source.js'
 import type { LocalSourceRecord } from './contracts/types.js'
+import type { McpInstallMethod, McpInstallReceipt, McpManualInstall } from './mcp/contracts/types.js'
 
 export interface MarketBuiltInProvider {
   readonly key: string
@@ -215,4 +216,76 @@ export type MarketOperationExecuteResponse =
 
 export interface MarketDesktopActionResponse {
   readonly ok: true
+}
+
+/** Renderer-facing view of one normalized MCP server entry. */
+export interface MarketMcpServerView {
+  readonly id: string
+  readonly name: string
+  readonly displayName: string
+  readonly summary: string
+  readonly version: string
+  readonly installMethods: readonly McpInstallMethod[]
+  readonly manualInstall?: McpManualInstall
+  readonly homepage?: string
+  readonly media?: { readonly icon: { readonly assetRef: string } }
+  readonly provenance: {
+    readonly sourceRecordId: string
+    readonly providerId: string
+    readonly itemId: string
+  }
+}
+
+export interface MarketMcpServersResponse {
+  readonly servers: readonly MarketMcpServerView[]
+}
+
+export type McpOperationPreviewRequest =
+  | { readonly action: 'install'; readonly sourceRecordId: string; readonly itemId: string }
+
+/** Host-verified facts shown before the user confirms an MCP install. */
+export interface McpOperationPreviewResult {
+  readonly action: 'install'
+  readonly serverName: string
+  readonly displayName: string
+  readonly method: McpInstallMethod
+  readonly expiresAt: string
+  readonly previewId: string
+}
+
+export interface McpOperationExecuteRequest {
+  readonly previewId: string
+}
+
+export interface McpOperationExecuteResult {
+  readonly action: 'install'
+  readonly receipt: McpInstallReceipt
+  readonly displayName: string
+  readonly restartToken: string
+}
+
+/** One installed MCP server reconciled with its Desktop enable state. */
+export interface MarketMcpInstallationView {
+  readonly serverName: string
+  readonly displayName: string
+  readonly method: McpInstallMethod
+  readonly enabled: boolean
+  readonly installedAt: string
+}
+
+export interface MarketMcpInstallationsResponse {
+  readonly installations: readonly MarketMcpInstallationView[]
+}
+
+/** Renderer input for an MCP server enable/disable/remove mutation. */
+export type MarketMcpMutationRequest =
+  | { readonly action: 'enable'; readonly serverName: string }
+  | { readonly action: 'disable'; readonly serverName: string }
+  | { readonly action: 'remove'; readonly serverName: string }
+
+/** Result of a completed MCP server state mutation. */
+export interface MarketMcpMutationResult {
+  readonly action: 'enable' | 'disable' | 'remove'
+  readonly serverName: string
+  readonly restartToken: string
 }

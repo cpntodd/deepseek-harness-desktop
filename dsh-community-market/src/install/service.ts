@@ -110,6 +110,8 @@ export type MarketInstallErrorCode =
   | 'verification-failed'
   | 'operation-failed'
   | 'persistence-failed'
+  | 'source-required'
+  | 'install-denied'
 
 /** Error whose message is safe to return through the loopback API. */
 export class MarketInstallError extends Error {

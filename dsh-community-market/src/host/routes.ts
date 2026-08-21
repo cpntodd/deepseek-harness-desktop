@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
@@ -38,6 +38,13 @@ import { createRestrictedImageFetcher } from '../media/restricted-image.js'
 import { createMarketMediaService } from '../media/service.js'
 import { MarketInstallError, type MarketInstallService } from '../install/service.js'
 import { manualInstallHints } from '../install/manual.js'
+import {
+  MCP_REGISTRY_HOSTNAME,
+  MCP_REGISTRY_SOURCE,
+  mcpRegistryAdapter,
+} from '../mcp/adapters/mcp-registry.js'
+import { McpInstallService } from '../mcp/install/service.js'
+import type { McpOperationPreviewRequest } from '../api-types.js'
 
 export const MARKET_SETTINGS_NAMESPACE = settingsNamespace('dsh-community-market')
 const SOURCE_SCHEMA = z.object({
@@ -66,6 +73,36 @@ const SETTINGS_SCHEMA = z.object({
     displayName: z.string().required(),
     installedAt: z.string().required(),
   })).default([]),
+  mcpInstallReceipts: z.array(z.object({
+    sourceRecordId: z.string().required(),
+    providerId: z.string().required(),
+    itemId: z.string().required(),
+    serverName: z.string().required(),
+    displayName: z.string().required(),
+    method: z.union([
+      z.object({
+        kind: z.const('stdio'),
+        command: z.string().required(),
+        args: z.array(z.string()).default([]),
+        env: z.array(z.object({
+          name: z.string().required(),
+          secret: z.boolean(),
+          required: z.boolean(),
+          value: z.string(),
+        })).default([]),
+      }),
+      z.object({
+        kind: z.const('streamable-http'),
+        url: z.string().required(),
+        headers: z.array(z.object({
+          name: z.string().required(),
+          secret: z.boolean(),
+          required: z.boolean(),
+        })).default([]),
+      }),
+    ]).required(),
+    installedAt: z.string().required(),
+  })).default([]),
   catalogCache: z.object({
     version: z.number().step(1),
     sourceRecordId: z.string(),
@@ -89,6 +126,11 @@ const ROUTE_OPEN_TERMINAL = '/api/community-market/desktop/open-terminal'
 const ROUTE_REQUEST_RESTART = '/api/community-market/desktop/request-restart'
 const ROUTE_OPERATION_PREVIEW = '/api/community-market/operations/preview'
 const ROUTE_OPERATION_EXECUTE = '/api/community-market/operations/execute'
+const ROUTE_MCP_SERVERS = '/api/community-market/mcp/servers'
+const ROUTE_MCP_OPERATION_PREVIEW = '/api/community-market/mcp/operations/preview'
+const ROUTE_MCP_OPERATION_EXECUTE = '/api/community-market/mcp/operations/execute'
+const ROUTE_MCP_INSTALLATIONS = '/api/community-market/mcp/installations'
+const ROUTE_MCP_MUTATIONS = '/api/community-market/mcp/mutations'
 const MAX_BODY_BYTES = 16 * 1024
 // The full registry was already about 6.7 MiB in August 2026. Keep bounded
 // headroom without relaxing the 2 MiB default used by user-added sources.
@@ -129,8 +171,10 @@ function sendInstallError(res: ServerResponse, cause: unknown): void {
       : cause.code === 'conflict' ? 409
         : cause.code === 'intent-expired' ? 410
           : cause.code === 'verification-failed' ? 422
-            : cause.code === 'operation-failed' ? 502
-              : 500
+            : cause.code === 'install-denied' ? 403
+              : cause.code === 'source-required' ? 400
+                : cause.code === 'operation-failed' ? 502
+                  : 500
   sendJson(res, status, { error: cause.message, code: cause.code })
 }
 
@@ -148,6 +192,14 @@ function sendCatalogFailure(res: ServerResponse, cause: unknown): void {
       ? 'catalog response was invalid'
       : 'catalog source unavailable'
   sendJson(res, status, { error, code })
+}
+
+function sendMcpFailure(res: ServerResponse, cause: unknown): void {
+  if (cause instanceof CatalogNetworkError && cause.code === 'timeout') {
+    sendJson(res, 504, { error: 'mcp registry request timed out', code: 'mcp-timeout' })
+    return
+  }
+  sendJson(res, 502, { error: 'mcp registry unavailable', code: 'mcp-unavailable' })
 }
 
 function catalogMetadata(index: CatalogFullIndex): MarketCatalogMetadata {
@@ -461,6 +513,45 @@ function asOperationExecute(value: unknown): string {
   return request.previewId
 }
 
+function asMcpOperationPreview(value: unknown): McpOperationPreviewRequest {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new MarketInstallError('invalid-request', 'Invalid MCP operation preview request.')
+  }
+  const request = value as Record<string, unknown>
+  if (
+    request.action === 'install'
+    && exactKeys(request, ['action', 'sourceRecordId', 'itemId'])
+    && boundedIdentifier(request.sourceRecordId)
+    && boundedIdentifier(request.itemId)
+  ) return { action: 'install', sourceRecordId: request.sourceRecordId, itemId: request.itemId }
+  throw new MarketInstallError('invalid-request', 'Invalid MCP operation preview request.')
+}
+
+function asMcpOperationExecute(value: unknown): string {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new MarketInstallError('invalid-request', 'Invalid MCP operation execution request.')
+  }
+  const request = value as Record<string, unknown>
+  if (!exactKeys(request, ['previewId']) || !boundedIdentifier(request.previewId)) {
+    throw new MarketInstallError('invalid-request', 'Invalid MCP operation execution request.')
+  }
+  return request.previewId
+}
+
+function asMcpMutation(value: unknown): { action: 'enable' | 'disable' | 'remove'; serverName: string } {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new MarketInstallError('invalid-request', 'Invalid MCP mutation request.')
+  }
+  const request = value as Record<string, unknown>
+  if (request.action !== 'enable' && request.action !== 'disable' && request.action !== 'remove') {
+    throw new MarketInstallError('invalid-request', 'Invalid MCP mutation request.')
+  }
+  if (typeof request.serverName !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/u.test(request.serverName)) {
+    throw new MarketInstallError('invalid-request', 'Invalid MCP mutation request.')
+  }
+  return { action: request.action, serverName: request.serverName }
+}
+
 function asEmptyDesktopAction(value: unknown): void {
   if (value === null || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 0) {
     throw new MarketInstallError('invalid-request', 'The desktop action request must not contain parameters.')
@@ -533,6 +624,29 @@ export interface MarketDesktopPlugins {
 
 export interface MarketDesktopPluginsProvider {
   get(): MarketDesktopPlugins | undefined
+}
+
+/**
+ * Desktop-owned MCP server state, structurally compatible with the desktop's
+ * `DesktopMcpService` (duck-typed; no import coupling — the desktop package is
+ * not a dependency of this one). Installs persist here so profile composition
+ * can emit one `mcp-client` row per enabled server.
+ */
+export interface MarketDesktopMcpState {
+  listMcpServers(): readonly {
+    readonly serverName: string
+    readonly displayName: string
+    readonly method: unknown
+    readonly enabled: boolean
+    readonly installedAt: string
+  }[]
+  addMcpServer(input: { serverName: string; displayName: string; method: unknown }): Promise<void>
+  setMcpServerEnabled(serverName: string, enabled: boolean): Promise<void>
+  removeMcpServer(serverName: string): Promise<void>
+}
+
+export interface MarketDesktopMcpStateProvider {
+  get(): MarketDesktopMcpState | undefined
 }
 
 function validDesktopBundle(value: unknown): value is MarketDesktopPluginBundle {
@@ -729,6 +843,7 @@ export function registerMarketRoutes(
   installProvider?: MarketInstallServiceProvider,
   desktopActionsProvider?: MarketDesktopActionsProvider,
   desktopPluginsProvider?: MarketDesktopPluginsProvider,
+  mcpStateProvider?: MarketDesktopMcpStateProvider,
 ): () => void {
   const expectedPort = ctx.webServer.port
   const generationController = new AbortController()
@@ -809,6 +924,13 @@ export function registerMarketRoutes(
       syntheticProxyHostnames: [DSH_1024STORE_HOSTNAME, 'github.com', 'avatars.githubusercontent.com'],
     }),
   })
+  const mcpHttpClient = createCachedCatalogHttpClient(
+    createRestrictedHttpClient({
+      // This exact hostname is compiled into the reviewed MCP registry adapter.
+      syntheticProxyHostnames: [MCP_REGISTRY_HOSTNAME],
+    }),
+  )
+  const mcpService = new McpInstallService(scope, mcpRegistryAdapter, MCP_REGISTRY_SOURCE, mcpHttpClient, media)
   const service = new DefaultCatalogService(store, restrictedHttpClient, {
     adapterHttpClients: new Map([
       [DSH_1024STORE_ADAPTER_ID, dsh1024StoreHttpClient],
@@ -1043,6 +1165,136 @@ export function registerMarketRoutes(
         if (!signal.aborted && !res.destroyed) {
           sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'source change failed' })
         }
+      } finally {
+        stopWatching()
+      }
+    }}),
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_MCP_SERVERS, handler: async (req, res) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'MCP servers require a GET request' })
+        return
+      }
+      const controller = new AbortController()
+      const signal = AbortSignal.any([controller.signal, generationController.signal])
+      const stopWatching = abortOnDisconnect(req, res, controller)
+      try {
+        const params = typeof req.url === 'string' ? new URL(req.url, 'http://localhost').searchParams : undefined
+        const search = params?.get('search') ?? undefined
+        const locale = params?.get('locale') ?? ''
+        const servers = await mcpService.listServers({
+          ...search === undefined ? {} : { search },
+          locale,
+        }, signal)
+        if (!signal.aborted && !res.destroyed) sendJson(res, 200, { servers })
+      } catch (cause) {
+        if (!signal.aborted && !res.destroyed) sendMcpFailure(res, cause)
+      } finally {
+        stopWatching()
+      }
+    }}),
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_MCP_OPERATION_PREVIEW, handler: async (req, res) => {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'MCP operations require a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const signal = AbortSignal.any([controller.signal, generationController.signal])
+      const stopWatching = abortOnDisconnect(req, res, controller)
+      try {
+        const preview = asMcpOperationPreview(await readJson(req, signal))
+        const result = await mcpService.previewInstall(preview.sourceRecordId, preview.itemId, signal)
+        if (!signal.aborted && !res.destroyed) sendJson(res, 200, result)
+      } catch (cause) {
+        if (!signal.aborted && !res.destroyed) sendInstallError(res, cause)
+      } finally {
+        stopWatching()
+      }
+    }}),
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_MCP_OPERATION_EXECUTE, handler: async (req, res) => {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'MCP operations require a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const signal = AbortSignal.any([controller.signal, generationController.signal])
+      const stopWatching = abortOnDisconnect(req, res, controller)
+      try {
+        const execute = asMcpOperationExecute(await readJson(req, signal))
+        const result = await mcpService.executeInstall(execute, signal)
+        const mcpState = mcpStateProvider?.get()
+        if (mcpState !== undefined) {
+          await mcpState.addMcpServer({
+            serverName: result.receipt.serverName,
+            displayName: result.displayName,
+            method: result.receipt.method,
+          })
+        }
+        if (!signal.aborted && !res.destroyed) sendJson(res, 200, result)
+      } catch (cause) {
+        if (!signal.aborted && !res.destroyed) sendInstallError(res, cause)
+      } finally {
+        stopWatching()
+      }
+    }}),
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_MCP_MUTATIONS, handler: async (req, res) => {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'MCP mutations require a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const signal = AbortSignal.any([controller.signal, generationController.signal])
+      const stopWatching = abortOnDisconnect(req, res, controller)
+      try {
+        const mutation = asMcpMutation(await readJson(req, signal))
+        const mcpState = mcpStateProvider?.get()
+        if (mcpState === undefined) {
+          throw new MarketInstallError('operation-failed', 'Desktop MCP state is unavailable.')
+        }
+        const { action, serverName } = mutation
+        if (action === 'enable') {
+          await mcpState.setMcpServerEnabled(serverName, true)
+        } else if (action === 'disable') {
+          await mcpState.setMcpServerEnabled(serverName, false)
+        } else {
+          await mcpState.removeMcpServer(serverName)
+        }
+        const restartToken = rememberDesktopToken(desktopPluginRestartTokens, randomBytes(32).toString('base64url'), Date.now() + 5 * 60 * 1000)
+        if (!signal.aborted && !res.destroyed) sendJson(res, 200, { action, serverName, restartToken })
+      } catch (cause) {
+        if (!signal.aborted && !res.destroyed) sendInstallError(res, cause)
+      } finally {
+        stopWatching()
+      }
+    }}),
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_MCP_INSTALLATIONS, handler: async (req, res) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'MCP installations require a GET request' })
+        return
+      }
+      const controller = new AbortController()
+      const signal = AbortSignal.any([controller.signal, generationController.signal])
+      const stopWatching = abortOnDisconnect(req, res, controller)
+      try {
+        const receipts = await mcpService.listReceipts()
+        const mcpState = mcpStateProvider?.get()
+        const installations = mcpState === undefined
+          ? receipts.map(receipt => ({
+              serverName: receipt.serverName,
+              displayName: receipt.displayName,
+              method: receipt.method,
+              enabled: true,
+              installedAt: receipt.installedAt,
+            }))
+          : mcpState.listMcpServers().map(server => ({
+              serverName: server.serverName,
+              displayName: server.displayName,
+              method: server.method,
+              enabled: server.enabled,
+              installedAt: server.installedAt,
+            }))
+        if (!signal.aborted && !res.destroyed) sendJson(res, 200, { installations })
+      } catch (cause) {
+        if (!signal.aborted && !res.destroyed) sendInstallError(res, cause)
       } finally {
         stopWatching()
       }
@@ -1389,6 +1641,14 @@ export function registerMarketRoutes(
           }
           install.consumeRestartToken(restartToken)
         }
+        // MCP installs mint their own one-shot restart grants. Consume
+        // tolerantly: a non-MCP token (package install or desktop plugin)
+        // already succeeded above and must not fail the restart here.
+        try {
+          mcpService.consumeRestartToken(restartToken)
+        } catch {
+          // not an MCP restart token — already handled above
+        }
         // Once the Host consumes the one-shot grant it owns the restart. A
         // renderer disconnect may drop the acknowledgement, but must not burn
         // the token without performing the accepted action.
@@ -1435,4 +1695,9 @@ export const marketRoutes = {
   requestRestart: ROUTE_REQUEST_RESTART,
   operationPreview: ROUTE_OPERATION_PREVIEW,
   operationExecute: ROUTE_OPERATION_EXECUTE,
+  mcpServers: ROUTE_MCP_SERVERS,
+  mcpOperationPreview: ROUTE_MCP_OPERATION_PREVIEW,
+  mcpOperationExecute: ROUTE_MCP_OPERATION_EXECUTE,
+  mcpInstallations: ROUTE_MCP_INSTALLATIONS,
+  mcpMutations: ROUTE_MCP_MUTATIONS,
 }

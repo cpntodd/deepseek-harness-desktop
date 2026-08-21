@@ -4,6 +4,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import {
   registerMarketRoutes,
   registerMarketSettings,
+  type MarketDesktopMcpState,
   type MarketDesktopPlugins,
 } from './host/routes.js'
 import { createRestrictedHttpClient } from './network/restricted-http.js'
@@ -36,11 +37,13 @@ export function apply(ctx: Context): void {
   let installService: MarketInstallService | undefined
   let desktopActions: DesktopActionsCapability | undefined
   let desktopPlugins: MarketDesktopPlugins | undefined
+  let desktopMcp: MarketDesktopMcpState | undefined
   const installProvider = { get: () => installService }
   const desktopActionsProvider = { get: () => desktopActions }
   const desktopPluginsProvider = { get: () => desktopPlugins }
+  const mcpStateProvider = { get: () => desktopMcp }
   ctx.effect(
-    () => registerMarketRoutes(ctx, scope, installProvider, desktopActionsProvider, desktopPluginsProvider),
+    () => registerMarketRoutes(ctx, scope, installProvider, desktopActionsProvider, desktopPluginsProvider, mcpStateProvider),
     'community-market: routes',
   )
   ctx.inject(['desktopActions'], (desktopCtx) => {
@@ -60,6 +63,15 @@ export function apply(ctx: Context): void {
         if (desktopPlugins === plugins) desktopPlugins = undefined
       }
     }, 'community-market: optional desktop plugin management')
+  })
+  ctx.inject(['desktopMcp'], (desktopCtx) => {
+    const mcp = desktopCtx.get('desktopMcp') as MarketDesktopMcpState
+    desktopCtx.effect(() => {
+      desktopMcp = mcp
+      return () => {
+        if (desktopMcp === mcp) desktopMcp = undefined
+      }
+    }, 'community-market: optional desktop MCP state')
   })
   // Browsing remains portable. Desktop-only package operations appear whenever
   // the narrow profile and package-manager capabilities are live.
@@ -95,5 +107,8 @@ export { marketRoutes } from './host/routes.js'
 export { BUILT_IN_PROVIDERS, DefaultCatalogService } from './catalog/service.js'
 export { dsh1024StoreAdapter } from './adapters/dsh-1024store.js'
 export { dshfindAdapter } from './adapters/dshfind.js'
+export { mcpRegistryAdapter, MCP_REGISTRY_KEY } from './mcp/adapters/mcp-registry.js'
+export { McpInstallService } from './mcp/install/service.js'
+export type * from './mcp/contracts/types.js'
 export type * from './api-types.js'
 export * from './contracts/index.js'
