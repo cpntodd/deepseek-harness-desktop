@@ -24,6 +24,7 @@ export default defineConfig([
       'desktop-cli': 'src/desktop-cli.ts',
       terminal: 'src/terminal.ts',
       subscriptions: 'src/subscriptions/index.ts',
+      'escalation-protocol': 'src/escalation-protocol.ts',
       'update-checker': 'src/update-checker.ts',
       'update-download': 'src/update-download.ts',
       updates: 'src/updates.ts',

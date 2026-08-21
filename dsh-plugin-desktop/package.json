@@ -35,6 +35,10 @@
       "types": "./lib/types/subscriptions/index.d.ts",
       "default": "./lib/subscriptions.js"
     },
+    "./escalation-protocol": {
+      "types": "./lib/types/escalation-protocol.d.ts",
+      "default": "./lib/escalation-protocol.js"
+    },
     "./windows-pwsh-sandbox": {
       "types": "./lib/types/windows-pwsh-sandbox.d.ts",
       "default": "./lib/windows-pwsh-sandbox.js"

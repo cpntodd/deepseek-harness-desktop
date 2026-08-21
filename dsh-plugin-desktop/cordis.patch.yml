@@ -9,6 +9,8 @@
       name: dsh-plugin-desktop/terminal
     - id: desktop-subscriptions
       name: dsh-plugin-desktop/subscriptions
+    - id: desktop-escalation-protocol
+      name: dsh-plugin-desktop/escalation-protocol
     - id: desktop-diagnostics
       name: dsh-plugin-desktop/diagnostics
     - id: desktop-notifications
