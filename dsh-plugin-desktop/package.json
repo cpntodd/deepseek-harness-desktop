@@ -31,9 +31,9 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
-    "./codex": {
-      "types": "./lib/types/codex.d.ts",
-      "default": "./lib/codex.js"
+    "./subscriptions": {
+      "types": "./lib/types/subscriptions/index.d.ts",
+      "default": "./lib/subscriptions.js"
     },
     "./windows-pwsh-sandbox": {
       "types": "./lib/types/windows-pwsh-sandbox.d.ts",
