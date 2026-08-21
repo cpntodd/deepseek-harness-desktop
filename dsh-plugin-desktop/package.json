@@ -31,6 +31,10 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./codex": {
+      "types": "./lib/types/codex.d.ts",
+      "default": "./lib/codex.js"
+    },
     "./windows-pwsh-sandbox": {
       "types": "./lib/types/windows-pwsh-sandbox.d.ts",
       "default": "./lib/windows-pwsh-sandbox.js"
@@ -237,6 +241,7 @@
     "@deepseek-ai/dsh-web-app": "0.1.1-rc.1",
     "@deepseek-ai/dsh-workflow": "0.1.1-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
+    "@earendil-works/pi-ai": "0.82.1",
     "adm-zip": "^0.6.0",
     "dsh-community-market": "0.1.0-dev.0",
     "dshmarket": "1.17.1",

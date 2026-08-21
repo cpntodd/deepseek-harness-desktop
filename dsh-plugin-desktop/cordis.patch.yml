@@ -7,7 +7,8 @@
         mode: compatibility
     - id: desktop-terminal
       name: dsh-plugin-desktop/terminal
-      disabled: !!js process.platform === 'linux'
+    - id: desktop-codex
+      name: dsh-plugin-desktop/codex
     - id: desktop-diagnostics
       name: dsh-plugin-desktop/diagnostics
     - id: desktop-notifications

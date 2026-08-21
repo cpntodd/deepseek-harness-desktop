@@ -253,6 +253,20 @@ export class ElectronDesktopRuntime implements DesktopRuntime {
   }
 
   /** @inheritdoc */
+  openExternal(url: string): Promise<void> {
+    let target: URL
+    try {
+      target = new URL(url)
+    } catch {
+      return Promise.reject(new Error('dsh-plugin-desktop: refused to open a malformed external URL'))
+    }
+    if (target.protocol !== 'https:') {
+      return Promise.reject(new Error('dsh-plugin-desktop: refused to open a non-https external URL'))
+    }
+    return shell.openExternal(target.href)
+  }
+
+  /** @inheritdoc */
   async pickDirectory(): Promise<string | null> {
     return await this.workspaceAdmission.pickDirectory()
   }

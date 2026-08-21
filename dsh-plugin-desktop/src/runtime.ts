@@ -172,6 +172,14 @@ export interface DesktopRuntime {
   notifyAttention(notification: DesktopNotification): void
 
   /**
+   * Open one https URL in the user's default browser.
+   * @param url - absolute https URL to hand to the operating system.
+   * @returns a promise that rejects when the URL is not an https URL or the
+   * native open request fails.
+   */
+  openExternal(url: string): Promise<void>
+
+  /**
    * Contribute one command to the native tray for the current Cordis lifetime.
    * @param item - dynamic label, state, and invocation owned by the caller.
    * @returns a refreshable, idempotent registration handle.

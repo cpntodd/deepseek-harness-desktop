@@ -406,8 +406,20 @@ function buildCatalogScanSnapshots(
     ? new Date(generatedAt).toISOString()
     : undefined
   const providerRevision = plainText(meta.revision, 160, '') || undefined
-  const total = providerTotal(meta, raw.packages.length) ?? items.length
-  if (total !== items.length) throw new Error('1024Store scan did not reach the provider total')
+  // `meta.total` is the provider's whole-database size (8899 today), not the
+  // fixed window this endpoint returns (300). Treat it as an informational
+  // ceiling: receiving more than the declared total is a provider
+  // inconsistency, but receiving fewer is the normal windowed case.
+  const declaredTotal = meta.total
+  if (declaredTotal !== undefined) {
+    if (typeof declaredTotal !== 'number' || !Number.isSafeInteger(declaredTotal) || declaredTotal > 10_000) {
+      throw new Error('1024Store provider total is inconsistent')
+    }
+    if (items.length > declaredTotal) throw new Error('1024Store scan exceeded the provider total')
+  }
+  // Report only what was received so the snapshots and the Host's completeness
+  // check agree with the actual item count rather than the database total.
+  const total = items.length
   const fetchedAt = new Date().toISOString()
   const snapshots: CatalogSnapshot[] = []
   for (let offset = 0; offset < items.length; offset += 100) {

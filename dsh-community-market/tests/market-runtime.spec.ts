@@ -375,7 +375,7 @@ describe('1024Store adapter', () => {
     expect(snapshot.page).toEqual({ nextCursor: '50', total: 7635 })
   })
 
-  it('fails a complete 1024Store scan when provider metadata says more items exist', async () => {
+  it('accepts a complete 1024Store scan when provider metadata reports a larger database total', async () => {
     const packages = Array.from({ length: 51 }, (_, index) => ({
       ...rawCatalog.packages[0]!,
       id: `anywhere-labs/plugin-${index}`,
@@ -389,10 +389,14 @@ describe('1024Store adapter', () => {
       })),
     }
 
-    await expect(dsh1024StoreAdapter.scanCatalog!(
+    const snapshots = await dsh1024StoreAdapter.scanCatalog!(
       { limit: 100 },
       { source: source(), signal: new AbortController().signal, http, media: { register: () => fixtureAssetRef } },
-    )).rejects.toThrow(/provider total/u)
+    )
+
+    expect(snapshots.flatMap(snapshot => snapshot.items)).toHaveLength(51)
+    expect(snapshots).toHaveLength(1)
+    expect(snapshots[0]?.page.total).toBe(51)
   })
 
   it('keeps the reviewed 1024Store adapter page size fixed at 50', async () => {
@@ -809,7 +813,7 @@ describe('catalog active-source reads', () => {
       url: 'https://github.com/anywhere-labs/second-plugin',
     }
     const getJson = vi.fn(async () => ({
-      value: { ...rawCatalog, packages: [...rawCatalog.packages, secondItem] },
+      value: { ...rawCatalog, meta: { ...rawCatalog.meta, total: 2 }, packages: [...rawCatalog.packages, secondItem] },
       finalUrl: 'https://deepseek1024.com/api/v1/plugins',
     }))
     const service = new DefaultCatalogService(store, { getJson })
@@ -847,7 +851,7 @@ describe('catalog active-source reads', () => {
       url: 'https://github.com/anywhere-labs/second-plugin',
     }
     const getJson = vi.fn(async () => ({
-      value: { ...rawCatalog, packages: [...rawCatalog.packages, secondItem] },
+      value: { ...rawCatalog, meta: { ...rawCatalog.meta, total: 2 }, packages: [...rawCatalog.packages, secondItem] },
       finalUrl: 'https://deepseek1024.com/api/v1/plugins',
     }))
     const service = new DefaultCatalogService(store, { getJson })
@@ -882,7 +886,7 @@ describe('catalog active-source reads', () => {
       url: 'https://github.com/anywhere-labs/second-plugin',
     }
     const getJson = vi.fn(async () => ({
-      value: { ...rawCatalog, packages: [...rawCatalog.packages, secondItem] },
+      value: { ...rawCatalog, meta: { ...rawCatalog.meta, total: 2 }, packages: [...rawCatalog.packages, secondItem] },
       finalUrl: 'https://deepseek1024.com/api/v1/plugins',
     }))
     const service = new DefaultCatalogService(store, { getJson })
@@ -913,7 +917,7 @@ describe('catalog active-source reads', () => {
       url: 'https://github.com/anywhere-labs/second-plugin',
     }
     const getJson = vi.fn(async () => ({
-      value: { ...rawCatalog, packages: [...rawCatalog.packages, secondItem] },
+      value: { ...rawCatalog, meta: { ...rawCatalog.meta, total: 2 }, packages: [...rawCatalog.packages, secondItem] },
       finalUrl: 'https://deepseek1024.com/api/v1/plugins',
     }))
     let now = 1_000
@@ -1068,7 +1072,7 @@ describe('catalog active-source reads', () => {
     }
     const getJson = vi.fn()
       .mockResolvedValueOnce({
-        value: { ...rawCatalog, packages: [...rawCatalog.packages, secondItem] },
+        value: { ...rawCatalog, meta: { ...rawCatalog.meta, total: 2 }, packages: [...rawCatalog.packages, secondItem] },
         finalUrl: 'https://deepseek1024.com/api/v1/plugins',
       })
       .mockRejectedValueOnce(new Error('offline'))
@@ -1174,7 +1178,7 @@ describe('catalog active-source reads', () => {
       name: 'second-plugin',
       url: 'https://github.com/anywhere-labs/second-plugin',
     }
-    const completeCatalog = { ...rawCatalog, packages: [...rawCatalog.packages, secondItem] }
+    const completeCatalog = { ...rawCatalog, meta: { ...rawCatalog.meta, total: 2 }, packages: [...rawCatalog.packages, secondItem] }
     const getJson = vi.fn()
       .mockResolvedValueOnce({ value: completeCatalog, finalUrl: 'https://deepseek1024.com/api/v1/plugins' })
       .mockResolvedValueOnce({ value: completeCatalog, finalUrl: 'https://deepseek1024.com/api/v1/plugins' })
