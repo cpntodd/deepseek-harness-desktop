@@ -719,34 +719,58 @@ export class MarketInstallService {
     index: CatalogFullIndex,
     signal: AbortSignal,
   ): Promise<MarketInstallableResponse> {
+    return await this.listInstallableAll([index], signal)
+  }
+
+  async listInstallableAll(
+    indices: readonly CatalogFullIndex[],
+    signal: AbortSignal,
+  ): Promise<MarketInstallableResponse> {
     const operationSignal = this.operationSignal(signal)
     operationSignal.throwIfAborted()
     this.purge()
-    const currentKeys = new Set(index.snapshots.flatMap(snapshot => (
-      snapshot.items.map(item => candidateKey(index.source.sourceRecordId, item.id))
-    )))
-    for (const [key, candidate] of this.candidates) {
-      if (candidate.sourceRecordId === index.source.sourceRecordId && !currentKeys.has(key)) {
-        this.candidates.delete(key)
+    for (const index of indices) {
+      const currentKeys = new Set(index.snapshots.flatMap(snapshot => (
+        snapshot.items.map(item => candidateKey(index.source.sourceRecordId, item.id))
+      )))
+      for (const [key, candidate] of this.candidates) {
+        if (candidate.sourceRecordId === index.source.sourceRecordId && !currentKeys.has(key)) {
+          this.candidates.delete(key)
+        }
       }
+      for (const snapshot of index.snapshots) this.observeCatalog(snapshot)
     }
-    for (const snapshot of index.snapshots) this.observeCatalog(snapshot)
     operationSignal.throwIfAborted()
-    const items = index.snapshots.flatMap(snapshot => snapshot.items).filter(item => {
-      const candidate = this.candidates.get(candidateKey(index.source.sourceRecordId, item.id))
-      return candidate !== undefined
-        && candidate.providerId === item.provenance.providerId
-    })
+    const items = indices.flatMap(index => (
+      index.snapshots.flatMap(snapshot => snapshot.items).filter(item => {
+        const candidate = this.candidates.get(candidateKey(index.source.sourceRecordId, item.id))
+        return candidate !== undefined
+          && candidate.providerId === item.provenance.providerId
+      })
+    ))
     return {
-      source: index.source,
+      sources: indices.map(index => index.source),
       items,
       manualInstall: manualInstallHints(items),
-      metadata: {
-        scannedAt: index.scannedAt,
-        expiresAt: index.expiresAt,
-        ...(index.providerRevision === undefined ? {} : { providerRevision: index.providerRevision }),
-        cacheStatus: index.cacheStatus,
-      },
+      metadata: this.aggregateInstallableMetadata(indices),
+    }
+  }
+
+  private aggregateInstallableMetadata(indices: readonly CatalogFullIndex[]): MarketInstallableResponse['metadata'] {
+    const latestScannedAt = indices
+      .map(index => Date.parse(index.scannedAt))
+      .reduce((latest, value) => Number.isFinite(value) && value > latest ? value : latest, 0)
+    const earliestExpiresAt = indices
+      .map(index => Date.parse(index.expiresAt))
+      .filter(value => Number.isFinite(value))
+      .sort((left, right) => left - right)[0]
+    const revisions = new Set(indices.map(index => index.providerRevision).filter((value): value is string => value !== undefined))
+    const allCached = indices.every(index => index.cacheStatus === 'cached')
+    return {
+      scannedAt: new Date(latestScannedAt).toISOString(),
+      expiresAt: new Date(earliestExpiresAt ?? latestScannedAt).toISOString(),
+      ...(revisions.size === 1 ? { providerRevision: [...revisions][0]! } : {}),
+      cacheStatus: allCached ? 'cached' : 'fresh',
     }
   }
 

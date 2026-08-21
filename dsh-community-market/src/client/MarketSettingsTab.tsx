@@ -176,25 +176,90 @@ export interface MarketSurfaceProps {
   readonly initialView?: MarketView
 }
 
+function enabledSources(sources: readonly MarketSourceView[]): MarketSourceView[] {
+  return [...sources]
+    .filter(source => source.enabled)
+    .sort((left, right) => left.order - right.order)
+}
+
+function enabledSourceIds(sources: readonly MarketSourceView[]): string[] {
+  return enabledSources(sources).map(source => source.sourceRecordId)
+}
+
+function sameSourceIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
 function retainEnabledCatalog(
   catalog: MarketCatalogResponse | undefined,
   sources: readonly MarketSourceView[],
 ): MarketCatalogResponse | undefined {
   if (catalog === undefined) return undefined
-  const selected = [...sources]
-    .filter(source => source.enabled)
-    .sort((left, right) => left.order - right.order)
-    .at(0)
-  if (selected === undefined) return undefined
-  const result = catalog.results.find(value => value.source.sourceRecordId === selected.sourceRecordId)
-  return result === undefined ? undefined : { ...catalog, results: [{ ...result, source: selected }] }
+  const enabled = enabledSources(sources)
+  if (enabled.length === 0) return undefined
+  const enabledIds = new Set(enabled.map(source => source.sourceRecordId))
+  const byId = new Map(enabled.map(source => [source.sourceRecordId, source]))
+  const results = catalog.results
+    .filter(result => enabledIds.has(result.source.sourceRecordId))
+    .map(result => ({ ...result, source: byId.get(result.source.sourceRecordId) ?? result.source }))
+  if (results.length === 0) return undefined
+  return { ...catalog, results }
 }
 
-function selectedSource(sources: readonly MarketSourceView[]): MarketSourceView | undefined {
-  return [...sources]
-    .filter(source => source.enabled)
-    .sort((left, right) => left.order - right.order)
-    .at(0)
+interface DuplicateInstallTarget {
+  readonly source: MarketSourceView
+  readonly itemId: string
+  readonly item: MarketItem
+}
+
+interface CatalogFetchOutcome {
+  readonly source: MarketSourceView
+  readonly response?: MarketCatalogResponse
+  readonly error?: string
+}
+
+function mergeMarketCatalogs(outcomes: readonly CatalogFetchOutcome[]): MarketCatalogResponse {
+  const results: MarketCatalogSourceResult[] = outcomes.map(outcome => {
+    if (outcome.error !== undefined) return { source: outcome.source, error: outcome.error, stale: false }
+    const result = outcome.response?.results
+      .find(value => value.source.sourceRecordId === outcome.source.sourceRecordId)
+    return result === undefined ? { source: outcome.source, stale: false } : { ...result, source: outcome.source }
+  })
+  const categories = new Set<string>()
+  const hints = new Map<string, ManualInstallHint>()
+  let metadata: MarketCatalogResponse['metadata'] | undefined
+  for (const outcome of outcomes) {
+    if (outcome.response === undefined) continue
+    for (const category of outcome.response.categories ?? []) categories.add(category)
+    for (const hint of outcome.response.manualInstall ?? []) hints.set(`${hint.sourceRecordId}:${hint.itemId}`, hint)
+    if (metadata === undefined && outcome.response.metadata !== undefined) {
+      metadata = outcome.response.metadata
+    }
+  }
+  return {
+    query: {},
+    results,
+    categories: [...categories].sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' })),
+    manualInstall: [...hints.values()],
+    ...(metadata === undefined ? {} : { metadata }),
+    fetchedAt: new Date().toISOString(),
+  }
+}
+
+function installTargetsForPackage(
+  packageName: string | undefined,
+  items: readonly MarketItem[],
+  enabledById: ReadonlyMap<string, MarketSourceView>,
+): DuplicateInstallTarget[] {
+  if (packageName === undefined) return []
+  const targets = new Map<string, DuplicateInstallTarget>()
+  for (const item of items) {
+    if (item.package?.name !== packageName) continue
+    const source = enabledById.get(item.provenance.sourceRecordId)
+    if (source === undefined || targets.has(source.sourceRecordId)) continue
+    targets.set(source.sourceRecordId, { source, itemId: item.id, item })
+  }
+  return [...targets.values()]
 }
 
 function categoriesFromItems(items: readonly MarketItem[]): readonly string[] {
@@ -261,6 +326,10 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
   const [error, setError] = useState<string>()
   const [loadMoreError, setLoadMoreError] = useState<string>()
   const [selected, setSelected] = useState<VisibleItem>()
+  const [installSourceChooser, setInstallSourceChooser] = useState<{
+    readonly item: VisibleItem
+    readonly targets: readonly DuplicateInstallTarget[]
+  }>()
   const [addOpen, setAddOpen] = useState(false)
   const [manifestUrl, setManifestUrl] = useState('')
   const [mutationError, setMutationError] = useState<string>()
@@ -316,8 +385,8 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
     pageRequest.current = undefined
     setLoadingMore(false)
     setLoadMoreError(undefined)
-    const selected = selectedSource(nextState.sources)
-    if (selected === undefined) {
+    const enabled = enabledSources(nextState.sources)
+    if (enabled.length === 0) {
       readRequest.current = undefined
       setCatalog(undefined)
       setQuery('')
@@ -333,46 +402,51 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
     readRequest.current = request
     setLoading(true)
     setError(undefined)
-    let catalogApplied = false
-    const applyCatalog = (next: MarketCatalogResponse): MarketCatalogResponse | undefined => {
-      const retained = retainEnabledCatalog(next, nextState.sources)
-      const result = retained?.results[0]
-      if (retained === undefined || result?.snapshot === undefined) return undefined
-      rememberCategories(retained)
+    const applyCatalog = (next: MarketCatalogResponse) => {
+      rememberCategories(next)
       setAppliedQuery(effectiveQuery)
       setSelectedCategories([...categories])
-      setCatalog(retained)
-      catalogApplied = true
-      return retained
+      setCatalog(next)
+    }
+    const fetchOutcome = async (source: MarketSourceView, refresh: boolean): Promise<CatalogFetchOutcome> => {
+      try {
+        const response = await readMarketCatalog(
+          source.sourceRecordId,
+          effectiveQuery,
+          readLocale(),
+          categories,
+          request.signal,
+          refresh,
+        )
+        return { source, response }
+      } catch (cause) {
+        return { source, error: catalogFailureMessage(cause, source, t) }
+      }
     }
     try {
-      const next = forceRefresh
-        ? await readMarketCatalog(selected.sourceRecordId, effectiveQuery, readLocale(), categories, request.signal, true)
-        : await readMarketCatalog(selected.sourceRecordId, effectiveQuery, readLocale(), categories, request.signal)
-      if (!request.signal.aborted && readRequest.current === request) {
-        const retained = applyCatalog(next)
-        if (retained === undefined) {
-          setError(catalogFailureMessage({ code: 'catalog-invalid-response' }, selected, t))
-          return
-        }
-        if (!forceRefresh
-          && effectiveQuery === ''
-          && categories.length === 0
-          && retained.results[0]?.stale === true) {
-          const refreshed = await readMarketCatalog(
-            selected.sourceRecordId,
-            effectiveQuery,
-            readLocale(),
-            categories,
-            request.signal,
-            true,
-          )
-          if (!request.signal.aborted && readRequest.current === request) applyCatalog(refreshed)
-        }
+      const outcomes = await Promise.all(enabled.map(source => fetchOutcome(source, forceRefresh)))
+      if (request.signal.aborted || readRequest.current !== request) return
+      let merged = mergeMarketCatalogs(outcomes)
+      const anySnapshot = merged.results.some(result => result.snapshot !== undefined)
+      if (!anySnapshot) {
+        const firstError = merged.results.find(result => result.error !== undefined)?.error
+        setError(firstError ?? t('catalogError'))
+        return
       }
-    } catch (cause) {
-      if (!request.signal.aborted && readRequest.current === request && !catalogApplied) {
-        setError(catalogFailureMessage(cause, selected, t))
+      applyCatalog(merged)
+      if (!forceRefresh && effectiveQuery === '' && categories.length === 0) {
+        const staleSources = merged.results
+          .filter(result => result.stale === true)
+          .map(result => result.source)
+        if (staleSources.length > 0) {
+          const refreshed = await Promise.all(staleSources.map(source => fetchOutcome(source, true)))
+          if (!request.signal.aborted && readRequest.current === request) {
+            const refreshedBySource = new Map(refreshed.map(outcome => [outcome.source.sourceRecordId, outcome]))
+            const combined = outcomes.map(outcome => refreshedBySource.get(outcome.source.sourceRecordId) ?? outcome)
+            merged = mergeMarketCatalogs(combined)
+            applyCatalog(merged)
+          }
+        }
       }
     } finally {
       if (readRequest.current === request) {
@@ -513,11 +587,17 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
     () => categoriesFromItems(installableIndex?.items ?? []),
     [installableIndex],
   )
-  const filteredInstallableItems = useMemo(() => (installableIndex?.items ?? [])
-    .filter(item => matchesInstallableQuery(item, appliedInstallableQuery))
-    .filter(item => installableCategories.length === 0
-      || item.categories?.some(category => installableCategories.includes(category)) === true)
-    .map(item => ({ item, source: installableIndex!.source, stale: false })), [
+  const filteredInstallableItems = useMemo(() => {
+    const sourcesById = new Map((installableIndex?.sources ?? []).map(source => [source.sourceRecordId, source]))
+    return (installableIndex?.items ?? [])
+      .filter(item => matchesInstallableQuery(item, appliedInstallableQuery))
+      .filter(item => installableCategories.length === 0
+        || item.categories?.some(category => installableCategories.includes(category)) === true)
+      .map(item => {
+        const source = sourcesById.get(item.provenance.sourceRecordId) ?? installableIndex!.sources[0]!
+        return { item, source, stale: false }
+      })
+  }, [
     appliedInstallableQuery,
     installableCategories,
     installableIndex,
@@ -531,7 +611,8 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
     return cursor === undefined ? [] : [{ sourceRecordId: result.source.sourceRecordId, cursor }]
   }).at(0), [catalog])
   const partialFailure = catalog?.results.some(result => result.error !== undefined) ?? false
-  const currentSource = state === undefined ? undefined : selectedSource(state.sources)
+  const currentSources = state === undefined ? [] : enabledSources(state.sources)
+  const currentSource = currentSources.length === 1 ? currentSources[0] : undefined
   const currentSourceHref = currentSource === undefined
     ? undefined
     : safeHttpsExternalHref(currentSource.homepage) ?? safeHttpsExternalHref(currentSource.attribution?.url)
@@ -570,8 +651,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
         builtIns: state?.builtIns ?? [],
         desktopActions: state?.desktopActions ?? { openTerminal: false, requestRestart: false },
       }
-      const sourceChanged = selectedSource(state?.sources ?? [])?.sourceRecordId
-        !== selectedSource(sources)?.sourceRecordId
+      const sourceChanged = !sameSourceIds(enabledSourceIds(state?.sources ?? []), enabledSourceIds(sources))
       setState(next)
       if (sourceChanged) {
         setCatalog(undefined)
@@ -747,15 +827,30 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
     setOperationSuccess(undefined)
     setOperationError(undefined)
     setDesktopActionError(undefined)
+    const packageName = value.item.package?.name
+    const enabledById = new Map(enabledSources(state?.sources ?? []).map(source => [source.sourceRecordId, source]))
+    const availableItems = viewRef.current === 'installable'
+      ? (installableIndex?.items ?? [])
+      : (catalog?.results.flatMap(result => result.snapshot?.items ?? []) ?? [])
+    const installTargets = installTargetsForPackage(packageName, availableItems, enabledById)
+    if (packageName !== undefined) {
+      const ownSource = enabledById.get(value.source.sourceRecordId)
+      if (ownSource !== undefined && !installTargets.some(target => target.source.sourceRecordId === value.source.sourceRecordId)) {
+        installTargets.push({ source: ownSource, itemId: value.item.id, item: value.item })
+      }
+    }
     const beginInstallPreview = () => {
       if (selectedKeyRef.current !== selectionKey) return
+      if (installTargets.length > 1) {
+        setInstallSourceChooser({ item: value, targets: installTargets })
+        return
+      }
       void beginOperationPreview({
         action: 'install',
         sourceRecordId: value.source.sourceRecordId,
         itemId: value.item.id,
       })
     }
-    const packageName = value.item.package?.name
     if (packageName === undefined) {
       beginInstallPreview()
       return
@@ -964,15 +1059,17 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
           </Pill>
         </div>
         <Pill className="dshMarketCurrentSource">
-          {currentSource === undefined
+          {currentSources.length === 0
             ? t('noSourceSelected')
-            : currentSourceHref === undefined
-              ? `${t('currentSource')}: ${currentSource.name}`
-              : (
-                <a href={currentSourceHref} target="_blank" rel="noopener noreferrer">
-                  {t('currentSource')}: {currentSource.name} <IconRightUpOutline16 size={12} />
-                </a>
-              )}
+            : currentSource === undefined
+              ? `${t('currentSource')}: ${t('multipleSources')}`
+              : currentSourceHref === undefined
+                ? `${t('currentSource')}: ${currentSource.name}`
+                : (
+                  <a href={currentSourceHref} target="_blank" rel="noopener noreferrer">
+                    {t('currentSource')}: {currentSource.name} <IconRightUpOutline16 size={12} />
+                  </a>
+                )}
         </Pill>
       </div>
       <main className="dshMarketMain">
@@ -1065,7 +1162,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
           />
         )}
       </main>
-      {selected !== undefined && (
+      {selected !== undefined && installSourceChooser === undefined && (
         <ItemActionModal
           value={selected}
           installation={selectedInstallation}
@@ -1100,6 +1197,29 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
             setSelectedInstallation(undefined)
             void beginOperationPreview({ action: 'enable', bundleId })
           }}
+          t={t}
+        />
+      )}
+      {installSourceChooser !== undefined && (
+        <SourceChooserModal
+          item={installSourceChooser.item}
+          targets={installSourceChooser.targets}
+          onPick={target => {
+            setInstallSourceChooser(undefined)
+            setSelected({ item: target.item, source: target.source, stale: false })
+            selectedKeyRef.current = visibleItemKey({ item: target.item, source: target.source, stale: false })
+            setSelectedInstallation(undefined)
+            setOperationPreview(undefined)
+            setOperationSuccess(undefined)
+            setOperationError(undefined)
+            setDesktopActionError(undefined)
+            void beginOperationPreview({
+              action: 'install',
+              sourceRecordId: target.source.sourceRecordId,
+              itemId: target.itemId,
+            })
+          }}
+          onCancel={() => setInstallSourceChooser(undefined)}
           t={t}
         />
       )}
@@ -1701,7 +1821,7 @@ function SourcesView({ state, catalog, error, pending, adapterGuideHref, onMutat
         </span>
       </div>
       {error !== undefined && <div className="dshMarketBanner" role="alert"><StateDot state="error" />{error}</div>}
-      <div className="dshMarketSources" role="radiogroup" aria-label={t('sourceSelection')}>
+      <div className="dshMarketSources" role="group" aria-label={t('sourceSelection')}>
         {state?.sources.map((source, index, sources) => (
           <SourceRow
             key={source.sourceRecordId}
@@ -1713,7 +1833,7 @@ function SourcesView({ state, catalog, error, pending, adapterGuideHref, onMutat
             onMoveUp={() => onMutation({ action: 'move', sourceRecordId: source.sourceRecordId, direction: 'up' })}
             onMoveDown={() => onMutation({ action: 'move', sourceRecordId: source.sourceRecordId, direction: 'down' })}
             onSelect={() => {
-              if (!source.enabled) onMutation({ action: 'select', sourceRecordId: source.sourceRecordId })
+              onMutation({ action: source.enabled ? 'disable' : 'enable', sourceRecordId: source.sourceRecordId })
             }}
             onRemove={() => onMutation({ action: 'remove', sourceRecordId: source.sourceRecordId })}
             t={t}
@@ -1804,7 +1924,7 @@ function SourceRow({ source, result, pending, canMoveUp, canMoveDown, onMoveUp, 
         <Button
           variant="outline"
           size="sm"
-          role="radio"
+          role="checkbox"
           aria-checked={source.enabled}
           disabled={pending}
           icon={source.enabled ? <IconCheckOutline16 /> : undefined}
@@ -1841,6 +1961,52 @@ function AvailableSource({ provider, pending, onAdd, t }: {
       </div>
       <Button variant="outline" size="sm" disabled={pending} icon={<IconPlusOutline16 />} onClick={onAdd}>{t('add')}</Button>
     </div>
+  )
+}
+
+function SourceChooserModal({ item, targets, onPick, onCancel, t }: {
+  item: VisibleItem
+  targets: readonly DuplicateInstallTarget[]
+  onPick: (target: DuplicateInstallTarget) => void
+  onCancel: () => void
+  t: MarketSettingsTabProps['t']
+}) {
+  return (
+    <Modal
+      open
+      className="dshMarketModal dshMarketWideModal"
+      contentClassName="dshMarketModalContent"
+      onClose={onCancel}
+      closeLabel={t('cancel')}
+      title={t('chooseInstallSourceTitle')}
+      description={t('chooseInstallSourceBody')}
+      footer={<div className="dshMarketModalActions">
+        <Button variant="ghost" onClick={onCancel}>{t('cancel')}</Button>
+      </div>}
+    >
+      <div className="dshMarketDetails">
+        <div className="dshMarketDetailsIntro">
+          <PluginIcon item={item.item} large />
+          <p>{item.item.displayName}</p>
+        </div>
+        <div className="dshMarketSourceChoices" role="listbox" aria-label={t('chooseInstallSourceTitle')}>
+          {targets.map(target => (
+            <button
+              type="button"
+              key={target.source.sourceRecordId}
+              className="dshMarketSourceChoice"
+              role="option"
+              aria-selected={target.source.sourceRecordId === item.source.sourceRecordId}
+              onClick={() => onPick(target)}
+            >
+              <strong>{sourceDisplayLabel(target.source)}</strong>
+              <span>{target.source.description ?? target.source.endpoint}</span>
+              <span>{t('installFromSource')}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </Modal>
   )
 }
 

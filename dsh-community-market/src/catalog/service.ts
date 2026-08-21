@@ -202,6 +202,10 @@ export interface CatalogService {
     signal: AbortSignal,
     options?: CatalogScanOptions,
   ): Promise<CatalogFullIndex | undefined>
+  scanEnabledCatalog(
+    signal: AbortSignal,
+    options?: CatalogScanOptions,
+  ): Promise<readonly CatalogFullIndex[]>
   queryCatalog(
     index: CatalogFullIndex,
     query: unknown,
@@ -483,10 +487,7 @@ export class DefaultCatalogService implements CatalogService {
     return generation
   }
 
-  async scanCatalog(
-    signal: AbortSignal,
-    options: CatalogScanOptions = {},
-  ): Promise<CatalogFullIndex | undefined> {
+  private scanRequest(options: CatalogScanOptions): { readonly scanQuery: CatalogQuery; readonly locale: string | undefined } {
     if (options.force !== undefined && typeof options.force !== 'boolean') {
       throw new TypeError('invalid catalog scan options')
     }
@@ -500,11 +501,23 @@ export class DefaultCatalogService implements CatalogService {
       limit: 100,
       ...(options.locale === undefined ? {} : { locale: options.locale }),
     })
-    const locale = scanQuery.locale
+    return { scanQuery, locale: scanQuery.locale }
+  }
+
+  private async loadOrderedSources(signal: AbortSignal): Promise<readonly LocalSourceRecord[]> {
     signal.throwIfAborted()
-    const sourceGenerationsAtLoadStart = new Map(this.sourceGenerations)
     const records = [...await this.store.load()].sort((left, right) => left.order - right.order)
     signal.throwIfAborted()
+    return records
+  }
+
+  async scanCatalog(
+    signal: AbortSignal,
+    options: CatalogScanOptions = {},
+  ): Promise<CatalogFullIndex | undefined> {
+    const { scanQuery, locale } = this.scanRequest(options)
+    const sourceGenerationsAtLoadStart = new Map(this.sourceGenerations)
+    const records = await this.loadOrderedSources(signal)
     const source = records.find(record => record.enabled)
     if (
       options.expectedSourceRecordId !== undefined
@@ -513,6 +526,31 @@ export class DefaultCatalogService implements CatalogService {
       throw new Error('catalog source is not active')
     }
     if (source === undefined) return undefined
+    return await this.scanSourceRecord(source, scanQuery, locale, sourceGenerationsAtLoadStart, options, signal)
+  }
+
+  async scanEnabledCatalog(
+    signal: AbortSignal,
+    options: CatalogScanOptions = {},
+  ): Promise<readonly CatalogFullIndex[]> {
+    const { scanQuery, locale } = this.scanRequest(options)
+    const sourceGenerationsAtLoadStart = new Map(this.sourceGenerations)
+    const records = await this.loadOrderedSources(signal)
+    const enabled = records.filter(record => record.enabled)
+    if (enabled.length === 0) return []
+    return await Promise.all(enabled.map(source => (
+      this.scanSourceRecord(source, scanQuery, locale, sourceGenerationsAtLoadStart, options, signal)
+    )))
+  }
+
+  private async scanSourceRecord(
+    source: LocalSourceRecord,
+    scanQuery: CatalogQuery,
+    locale: string | undefined,
+    sourceGenerationsAtLoadStart: ReadonlyMap<string, number>,
+    options: CatalogScanOptions,
+    signal: AbortSignal,
+  ): Promise<CatalogFullIndex> {
     const sourceGeneration = sourceGenerationsAtLoadStart.get(source.sourceRecordId) ?? 0
     if ((this.sourceGenerations.get(source.sourceRecordId) ?? 0) !== sourceGeneration) {
       throw new Error('catalog source changed during scan setup')

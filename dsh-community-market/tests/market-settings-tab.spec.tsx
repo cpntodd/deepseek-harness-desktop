@@ -192,7 +192,7 @@ function installableResponse(
   overrides: Partial<MarketInstallableResponse['metadata']> = {},
 ): MarketInstallableResponse {
   return {
-    source,
+    sources: [source],
     items: [...items],
     manualInstall: [],
     metadata: {
@@ -266,6 +266,7 @@ describe('MarketSettingsTab', () => {
       'en',
       [],
       expect.any(AbortSignal),
+      false,
     )
   })
 
@@ -346,6 +347,7 @@ describe('MarketSettingsTab', () => {
       'en',
       [],
       expect.any(AbortSignal),
+      false,
     )
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     await waitFor(() => {
@@ -587,6 +589,56 @@ describe('MarketSettingsTab', () => {
       expect(readMarketInstallations).toHaveBeenCalledOnce()
       expect(readMarketState).toHaveBeenCalledTimes(1)
       expect(readMarketCatalog).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('asks which source to install from when a plugin exists in multiple enabled sources', async () => {
+    const secondSource = makeSecondSource(true)
+    const firstItem = makeInstallableItem(firstSource, 'dup-item-a', 'Duplicate Plugin A', 'dsh-plugin-duplicate')
+    const secondItem = makeInstallableItem(secondSource, 'dup-item-b', 'Duplicate Plugin B', 'dsh-plugin-duplicate')
+    vi.mocked(readMarketState).mockResolvedValue({ ...enabledState, sources: [firstSource, secondSource] })
+    vi.mocked(readMarketCatalog).mockResolvedValue(catalogForSource(firstSource, [firstItem]))
+    vi.mocked(readMarketInstallable).mockResolvedValue({
+      sources: [firstSource, secondSource],
+      items: [firstItem, secondItem],
+      manualInstall: [],
+      metadata: {
+        scannedAt: '2026-08-18T01:00:00.000Z',
+        expiresAt: '2026-08-18T01:05:00.000Z',
+        providerRevision: 'fixture-revision-7',
+        cacheStatus: 'cached',
+      },
+    })
+    vi.mocked(readMarketInstallations).mockResolvedValue({ installations: [] })
+    vi.mocked(previewMarketOperation).mockResolvedValue({
+      action: 'install',
+      profileName: 'web',
+      packageName: 'dsh-plugin-duplicate',
+      version: '1.2.3',
+      displayName: 'Duplicate Plugin A',
+      expiresAt: '2026-08-18T00:05:00.000Z',
+      previewId: 'opaque-install-preview',
+    } as const)
+    render(<MarketSettingsTab {...props} />)
+
+    await screen.findByRole('button', { name: /Duplicate Plugin/u })
+    fireEvent.click(screen.getByRole('button', { name: en.installable }))
+    fireEvent.click(await screen.findByRole('button', { name: `${en.install}: Duplicate Plugin A` }))
+
+    const chooser = await screen.findByRole('dialog', { name: en.chooseInstallSourceTitle })
+    expectMarketModal(chooser, 'dshMarketWideModal')
+    const options = within(chooser).getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(within(chooser).getByText(en.chooseInstallSourceBody)).toBeTruthy()
+    expect(previewMarketOperation).not.toHaveBeenCalled()
+
+    fireEvent.click(within(chooser).getByRole('option', { name: /Second catalog/u }))
+    await waitFor(() => {
+      expect(previewMarketOperation).toHaveBeenCalledWith({
+        action: 'install',
+        sourceRecordId: secondSource.sourceRecordId,
+        itemId: secondItem.id,
+      }, expect.any(AbortSignal))
     })
   })
 
@@ -1198,73 +1250,48 @@ describe('MarketSettingsTab', () => {
     })
   })
 
-  it('selects exactly one source and clears the previous source while the new catalog loads', async () => {
+  it('toggles a second source on and merges both catalogs', async () => {
     const second = makeSecondSource(false)
+    const enabledSecond = { ...second, enabled: true }
     const initial = { sources: [firstSource, second], builtIns: [], desktopActions } as MarketStateResponse
-    const selected = {
-      sources: [{ ...firstSource, enabled: false }, { ...second, enabled: true }],
-      builtIns: [],
-      desktopActions,
-    } as MarketStateResponse
-    let resolveSecond: ((value: MarketCatalogResponse) => void) | undefined
-    const pendingSecond = new Promise<MarketCatalogResponse>(resolve => { resolveSecond = resolve })
     vi.mocked(readMarketState).mockResolvedValue(initial)
     vi.mocked(readMarketCatalog)
-      .mockResolvedValueOnce(catalogForSource(firstSource, [makeItem(firstSource, 'first-plugin', 'First Plugin', ['interface'])], 'first-next'))
-      .mockReturnValueOnce(pendingSecond)
-    vi.mocked(mutateMarketSource).mockResolvedValue(selected.sources)
+      .mockResolvedValueOnce(catalogForSource(firstSource, [makeItem(firstSource, 'first-plugin', 'First Plugin', ['interface'])]))
+      .mockResolvedValueOnce(catalogForSource(firstSource, [makeItem(firstSource, 'first-plugin', 'First Plugin', ['interface'])]))
+      .mockResolvedValueOnce(catalogForSource(second, [makeItem(second, 'second-plugin', 'Second Plugin', ['tools'])]))
+    vi.mocked(mutateMarketSource).mockResolvedValue([firstSource, enabledSecond])
     render(<MarketSettingsTab {...props} />)
 
     expect(await screen.findByRole('button', { name: /First Plugin/u })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.sources }))
-    const group = screen.getByRole('radiogroup', { name: en.sourceSelection })
-    const radios = within(group).getAllByRole('radio')
-    expect(radios.map(radio => radio.getAttribute('aria-checked'))).toEqual(['true', 'false'])
+    const group = screen.getByRole('group', { name: en.sourceSelection })
+    const checks = within(group).getAllByRole('checkbox')
+    expect(checks.map(checkbox => checkbox.getAttribute('aria-checked'))).toEqual(['true', 'false'])
 
-    fireEvent.click(radios[0]!)
-    expect(mutateMarketSource).not.toHaveBeenCalled()
-    fireEvent.click(radios[1]!)
+    fireEvent.click(checks[1]!)
     await waitFor(() => {
       expect(mutateMarketSource).toHaveBeenCalledWith(
-        { action: 'select', sourceRecordId: second.sourceRecordId },
+        { action: 'enable', sourceRecordId: second.sourceRecordId },
         expect.any(AbortSignal),
       )
-      expect(readMarketCatalog).toHaveBeenCalledTimes(2)
     })
-
     fireEvent.click(screen.getByRole('button', { name: en.discover }))
-    expect(screen.queryByRole('button', { name: /First Plugin/u })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'interface' })).toBeNull()
-    expect(screen.getByText(en.loading)).toBeTruthy()
-
-    await act(async () => {
-      resolveSecond?.(catalogForSource(second, [makeItem(second, 'second-plugin', 'Second Plugin', ['tools'])]))
-      await pendingSecond
-    })
     expect(await screen.findByRole('button', { name: /Second Plugin/u })).toBeTruthy()
-    expect(screen.getByText(`${en.currentSource}: ${second.name}`)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /First Plugin/u })).toBeNull()
+    expect(screen.getByRole('button', { name: /First Plugin/u })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'tools' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: en.loadMore })).toBeNull()
-    expect(readMarketCatalog).toHaveBeenNthCalledWith(
-      2,
-      second.sourceRecordId,
-      '',
-      'en',
-      [],
-      expect.any(AbortSignal),
-    )
+    expect(screen.getByRole('button', { name: 'interface' })).toBeTruthy()
   })
 
-  it('resets a submitted search before fetching a newly selected source', async () => {
+  it('resets a submitted search before fetching a newly enabled source', async () => {
     const second = makeSecondSource(false)
-    const selectedSources = [{ ...firstSource, enabled: false }, { ...second, enabled: true }]
+    const enabledSecond = { ...second, enabled: true }
     vi.mocked(readMarketState).mockResolvedValue({ sources: [firstSource, second], builtIns: [], desktopActions })
     vi.mocked(readMarketCatalog)
       .mockResolvedValueOnce(catalog)
       .mockResolvedValueOnce(catalogForSource(firstSource, [makeItem(firstSource, 'matched-plugin', 'Matched Plugin')]))
+      .mockResolvedValueOnce(catalogForSource(firstSource, [makeItem(firstSource, 'matched-plugin', 'Matched Plugin')]))
       .mockResolvedValueOnce(catalogForSource(second, [makeItem(second, 'second-plugin', 'Second Plugin')]))
-    vi.mocked(mutateMarketSource).mockResolvedValue(selectedSources)
+    vi.mocked(mutateMarketSource).mockResolvedValue([firstSource, enabledSecond])
     render(<MarketSettingsTab {...props} />)
 
     await screen.findByRole('button', { name: /Fixture Plugin/u })
@@ -1279,18 +1306,19 @@ describe('MarketSettingsTab', () => {
       'en',
       [],
       expect.any(AbortSignal),
+      false,
     )
 
     fireEvent.click(screen.getByRole('button', { name: en.sources }))
-    fireEvent.click(screen.getByRole('radio', { name: en.selectSource }))
+    fireEvent.click(screen.getByRole('checkbox', { name: en.selectSource }))
     await waitFor(() => {
-      expect(readMarketCatalog).toHaveBeenNthCalledWith(
-        3,
+      expect(readMarketCatalog).toHaveBeenCalledWith(
         second.sourceRecordId,
         '',
         'en',
         [],
         expect.any(AbortSignal),
+        false,
       )
     })
     fireEvent.click(screen.getByRole('button', { name: en.discover }))
@@ -1298,7 +1326,7 @@ describe('MarketSettingsTab', () => {
     expect(await screen.findByRole('button', { name: /Second Plugin/u })).toBeTruthy()
   })
 
-  it('adds an available source without fetching it, then fetches only after explicit selection', async () => {
+  it('adds an available source without fetching it, then fetches only after explicit enable', async () => {
     const added = { ...firstSource, enabled: false }
     vi.mocked(readMarketState).mockResolvedValue(availableState)
     vi.mocked(mutateMarketSource)
@@ -1320,11 +1348,11 @@ describe('MarketSettingsTab', () => {
     })
     expect(readMarketCatalog).not.toHaveBeenCalled()
 
-    fireEvent.click(await screen.findByRole('radio', { name: en.selectSource }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: en.selectSource }))
     await waitFor(() => {
       expect(mutateMarketSource).toHaveBeenNthCalledWith(
         2,
-        { action: 'select', sourceRecordId: firstSource.sourceRecordId },
+        { action: 'enable', sourceRecordId: firstSource.sourceRecordId },
         expect.any(AbortSignal),
       )
       expect(readMarketCatalog).toHaveBeenCalledOnce()
@@ -1439,6 +1467,7 @@ describe('MarketSettingsTab', () => {
         'en',
         ['interface'],
         expect.any(AbortSignal),
+        false,
       )
     })
     expect(await screen.findByRole('button', { name: /Interface Plugin/u })).toBeTruthy()
@@ -1455,6 +1484,7 @@ describe('MarketSettingsTab', () => {
         'en',
         ['interface', 'tools'],
         expect.any(AbortSignal),
+        false,
       )
     })
     expect(await screen.findByRole('button', { name: /Both Categories Plugin/u })).toBeTruthy()
@@ -1471,6 +1501,7 @@ describe('MarketSettingsTab', () => {
         'en',
         ['tools'],
         expect.any(AbortSignal),
+        false,
       )
     })
     expect(await screen.findByRole('heading', { name: en.catalogError })).toBeTruthy()
@@ -1530,9 +1561,9 @@ describe('MarketSettingsTab', () => {
     const view = render(<MarketSettingsTab {...props} />)
     await screen.findByRole('button', { name: /Fixture Plugin/u })
     fireEvent.click(screen.getByRole('button', { name: en.sources }))
-    fireEvent.click(screen.getByRole('radio', { name: en.selectSource }))
+    fireEvent.click(screen.getByRole('checkbox', { name: en.selectSource }))
     await waitFor(() => { expect(signal).toBeDefined() })
-    expect(screen.getAllByRole('radio').every(radio => (radio as HTMLButtonElement).disabled)).toBe(true)
+    expect(screen.getAllByRole('checkbox').every(checkbox => (checkbox as HTMLButtonElement).disabled)).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: en.discover }))
     expect((screen.getByRole('button', { name: en.refresh }) as HTMLButtonElement).disabled).toBe(true)
     expect(readMarketState).toHaveBeenCalledOnce()

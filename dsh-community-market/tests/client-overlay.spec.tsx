@@ -332,12 +332,12 @@ describe('community market overlay', () => {
     await screen.findByText('Better Sidebar')
     fireEvent.click(screen.getByRole('button', { name: 'sources' }))
 
-    fireEvent.click(screen.getByRole('radio', { name: 'selectSource' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'selectSource' }))
     expect(await screen.findByText('currentSource: Second catalog')).toBeTruthy()
     expect(request).toHaveBeenCalledTimes(4)
     expect(request.mock.calls[2]?.[1]).toMatchObject({ method: 'POST' })
     expect(request.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({
-      action: 'select',
+      action: 'enable',
       sourceRecordId: secondSource.sourceRecordId,
     }))
     expect(String(request.mock.calls[3]?.[0])).toContain('/api/community-market/catalog')

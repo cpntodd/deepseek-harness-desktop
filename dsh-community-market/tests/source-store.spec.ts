@@ -38,7 +38,7 @@ describe('settings-backed catalog source store', () => {
     await expect(store.load()).resolves.toEqual([source])
   })
 
-  it('normalizes legacy multi-enabled settings to one selected source', async () => {
+  it('preserves multi-enabled settings across sources', async () => {
     const secondSource: LocalSourceRecord = {
       ...source,
       sourceRecordId: '028f1f77-a5c4-7b73-a9ae-0242ac120003',
@@ -55,11 +55,38 @@ describe('settings-backed catalog source store', () => {
     await store.save([source, secondSource])
 
     expect(update).toHaveBeenCalledWith({
-      sources: [source, { ...secondSource, enabled: false }],
+      sources: [source, secondSource],
     })
     await expect(store.load()).resolves.toEqual([
       source,
-      { ...secondSource, enabled: false },
+      secondSource,
+    ])
+  })
+
+  it('preserves an all-disabled no-selection state', async () => {
+    const disabledSource: LocalSourceRecord = { ...source, enabled: false }
+    const secondDisabledSource: LocalSourceRecord = {
+      ...source,
+      sourceRecordId: '038f1f77-a5c4-7b73-a9ae-0242ac120004',
+      enabled: false,
+      order: 1,
+    }
+    let document: MarketSettingsDocument = { sources: [] }
+    const update = vi.fn(async (next: MarketSettingsDocument) => { document = next })
+    const scope = {
+      get: () => document,
+      update,
+    } as unknown as SettingsScope<MarketSettingsDocument>
+    const store = new SettingsCatalogSourceStore(scope)
+
+    await store.save([secondDisabledSource, disabledSource])
+
+    expect(update).toHaveBeenCalledWith({
+      sources: [disabledSource, secondDisabledSource],
+    })
+    await expect(store.load()).resolves.toEqual([
+      disabledSource,
+      secondDisabledSource,
     ])
   })
 })

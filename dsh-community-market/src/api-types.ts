@@ -90,6 +90,8 @@ export type MarketSourceMutation =
   | { readonly action: 'add-builtin'; readonly key: string }
   | { readonly action: 'add-standard'; readonly manifestUrl: string }
   | { readonly action: 'select'; readonly sourceRecordId: string }
+  | { readonly action: 'enable'; readonly sourceRecordId: string }
+  | { readonly action: 'disable'; readonly sourceRecordId: string }
   | { readonly action: 'move'; readonly sourceRecordId: string; readonly direction: 'up' | 'down' }
   | { readonly action: 'remove'; readonly sourceRecordId: string }
 
@@ -149,7 +151,7 @@ export interface MarketInstallationsResponse {
 
 /** Complete Host-derived structural subset; local install state never changes catalog membership. */
 export interface MarketInstallableResponse {
-  readonly source: MarketSourceView
+  readonly sources: readonly MarketSourceView[]
   readonly items: CatalogSnapshot['items']
   readonly manualInstall: readonly MarketManualInstallHint[]
   readonly metadata: MarketCatalogMetadata

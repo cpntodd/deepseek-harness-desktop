@@ -394,6 +394,12 @@ function asMutation(value: unknown): MarketSourceMutation {
   if (mutation.action === 'select' && typeof mutation.sourceRecordId === 'string') {
     return { action: 'select', sourceRecordId: mutation.sourceRecordId }
   }
+  if (mutation.action === 'enable' && typeof mutation.sourceRecordId === 'string') {
+    return { action: 'enable', sourceRecordId: mutation.sourceRecordId }
+  }
+  if (mutation.action === 'disable' && typeof mutation.sourceRecordId === 'string') {
+    return { action: 'disable', sourceRecordId: mutation.sourceRecordId }
+  }
   if (
     mutation.action === 'move'
     && typeof mutation.sourceRecordId === 'string'
@@ -656,7 +662,15 @@ async function mutateSources(
       enabled: false,
       order: nextOrder,
     })
-  } else if (mutation.action === 'select' || mutation.action === 'remove') {
+    } else if (mutation.action === 'enable' || mutation.action === 'disable') {
+      const index = records.findIndex(record => record.sourceRecordId === mutation.sourceRecordId)
+      if (index < 0) throw new Error('source not found')
+      const enabled = mutation.action === 'enable'
+      if (records[index]!.enabled !== enabled) {
+        if (!enabled) unavailableSourceRecordIds.add(records[index]!.sourceRecordId)
+        records[index] = { ...records[index]!, enabled }
+      }
+    } else if (mutation.action === 'select' || mutation.action === 'remove') {
     const index = records.findIndex(record => record.sourceRecordId === mutation.sourceRecordId)
     if (index < 0) throw new Error('source not found')
     if (mutation.action === 'remove') {
@@ -1088,23 +1102,25 @@ export function registerMarketRoutes(
           ) throw new MarketInstallError('invalid-request', 'The installable catalog query was invalid.')
           const force = refreshValues.length === 1
           const localeKey = localeValues[0] ?? ''
-          const index = await service.scanCatalog(signal, {
+          const indices = await service.scanEnabledCatalog(signal, {
             force,
             ...(localeKey === '' ? {} : { locale: localeKey }),
           })
-          if (index === undefined) {
+          if (indices.length === 0) {
             throw new MarketInstallError('not-available', 'No catalog source is active.')
           }
-          const response = await install.listInstallable(index, signal)
+          const response = await install.listInstallableAll(indices, signal)
           if (!signal.aborted && !res.destroyed) sendJson(res, 200, response)
           if (!generationController.signal.aborted) {
-            servedCatalogPreviews.add(catalogPreviewKey(index.source.sourceRecordId, localeKey))
-            const preview = buildCatalogResponse(
-              index,
-              { limit: 50, ...(localeKey === '' ? {} : { locale: localeKey }) },
-              { sourceRecordId: index.source.sourceRecordId },
-            )
-            void persistCatalogResponse(preview, index.source.sourceRecordId, localeKey)
+            for (const index of indices) {
+              servedCatalogPreviews.add(catalogPreviewKey(index.source.sourceRecordId, localeKey))
+              const preview = buildCatalogResponse(
+                index,
+                { limit: 50, ...(localeKey === '' ? {} : { locale: localeKey }) },
+                { sourceRecordId: index.source.sourceRecordId },
+              )
+              void persistCatalogResponse(preview, index.source.sourceRecordId, localeKey)
+            }
           }
         } catch (cause) {
           if (!signal.aborted && !res.destroyed) sendInstallError(res, cause)

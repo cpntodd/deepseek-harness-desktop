@@ -1208,7 +1208,7 @@ describe('catalog active-source reads', () => {
 })
 
 describe('source mutation boundary', () => {
-  it('normalizes legacy multi-enabled settings to the first source by order', async () => {
+  it('preserves multi-enabled settings in source order', async () => {
     const first = source()
     const second = source({
       sourceRecordId: '028f1f77-a5c4-7b73-a9ae-0242ac120003',
@@ -1223,7 +1223,7 @@ describe('source mutation boundary', () => {
 
     expect(records.map(record => [record.sourceRecordId, record.enabled])).toEqual([
       [first.sourceRecordId, true],
-      [second.sourceRecordId, false],
+      [second.sourceRecordId, true],
     ])
   })
 

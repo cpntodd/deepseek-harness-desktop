@@ -1045,6 +1045,7 @@ describe('market install Host routes', () => {
       listReceipts: vi.fn(async () => []),
       listVerifiedReceipts,
       listInstallable: vi.fn(),
+      listInstallableAll: vi.fn(),
       previewInstall,
       previewUninstall: vi.fn(),
       executePreview: vi.fn(async () => ({ action: 'install', receipt: { receiptId: 'receipt' }, restartToken: 'restart-token' })),

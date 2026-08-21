@@ -23,19 +23,14 @@ export interface MarketSettingsDocument {
 }
 
 /**
- * Reconcile legacy multi-enabled settings into the single active-source model.
- * The first enabled record by user order wins. An all-disabled registry keeps
- * its explicit no-selection state.
+ * Normalize the source registry to a stable user-defined order while preserving
+ * every per-source `enabled` flag. Multiple sources may be enabled at once; an
+ * all-disabled registry keeps its explicit no-selection state.
  */
 export function normalizeActiveSourceRecords(
   records: readonly LocalSourceRecord[],
 ): readonly LocalSourceRecord[] {
-  const ordered = [...records].sort((left, right) => left.order - right.order)
-  const activeSourceRecordId = ordered.find(record => record.enabled)?.sourceRecordId
-  return ordered.map(record => ({
-    ...record,
-    enabled: record.sourceRecordId === activeSourceRecordId,
-  }))
+  return [...records].sort((left, right) => left.order - right.order)
 }
 
 export class SettingsCatalogSourceStore implements CatalogSourceStore {
