@@ -339,4 +339,39 @@ describe('dshfind install target normalization', () => {
     expect(items[0]).not.toHaveProperty('package')
     expect(items[0]).not.toHaveProperty('latestVersion')
   })
+
+  it('bounds a large catalog scan to the scan page budget with honest totals', async () => {
+    const getJson = vi.fn(async (url: string) => {
+      const request = new URL(url)
+      const page = Number(request.searchParams.get('page'))
+      const data = Array.from({ length: 100 }, (_, index) => rawItem((page - 1) * 100 + index))
+      return { value: rawPage(data, page, 9_672), finalUrl: url }
+    })
+    const adapter = createDshfindAdapter({
+      interPageDelayMs: 0,
+      maxScanPages: 4,
+      now: () => new Date('2026-08-18T09:30:00Z'),
+    })
+
+    const snapshots = await adapter.scanCatalog!({}, {
+      source: source(),
+      signal: new AbortController().signal,
+      http: { getJson },
+      media: { register: vi.fn(() => 'mktimg_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') },
+    })
+
+    const items = snapshots.flatMap(snapshot => snapshot.items)
+    expect(getJson).toHaveBeenCalledTimes(4)
+    expect(items).toHaveLength(400)
+    expect(snapshots).toHaveLength(4)
+    for (const snapshot of snapshots) {
+      expect(snapshot.page.total).toBe(400)
+      expect(snapshot.page.total).not.toBe(9_672)
+    }
+  })
+
+  it('rejects an invalid scan page budget', () => {
+    expect(() => createDshfindAdapter({ maxScanPages: 0 })).toThrow(TypeError)
+    expect(() => createDshfindAdapter({ maxScanPages: -1 })).toThrow(TypeError)
+  })
 })

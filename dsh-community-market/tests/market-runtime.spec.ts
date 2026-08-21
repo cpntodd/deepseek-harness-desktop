@@ -1812,4 +1812,43 @@ describe('restricted HTTP boundary', () => {
       code: 'blocked-address',
     })
   })
+
+  it('scans a specific enabled source when multiple sources are enabled', async () => {
+    const first = source()
+    const second = source({
+      sourceRecordId: '028f1f77-a5c4-7b73-a9ae-0242ac120003',
+      order: 1,
+    })
+    const store = new MemoryCatalogSourceStore()
+    await store.save([first, second])
+    const getJson = vi.fn(async () => ({
+      value: rawCatalog,
+      finalUrl: 'https://deepseek1024.com/api/v1/plugins',
+    }))
+    const service = new DefaultCatalogService(store, { getJson })
+
+    const index = await service.scanCatalog(new AbortController().signal, {
+      expectedSourceRecordId: second.sourceRecordId,
+    })
+
+    expect(index?.source.sourceRecordId).toBe(second.sourceRecordId)
+    expect(getJson).toHaveBeenCalledOnce()
+    expect(index?.source.order).toBe(1)
+  })
+
+  it('rejects scanning a disabled source by record id', async () => {
+    const enabled = source()
+    const disabled = source({
+      sourceRecordId: '028f1f77-a5c4-7b73-a9ae-0242ac120003',
+      enabled: false,
+      order: 1,
+    })
+    const store = new MemoryCatalogSourceStore()
+    await store.save([enabled, disabled])
+    const service = new DefaultCatalogService(store, { getJson: vi.fn() })
+
+    await expect(service.scanCatalog(new AbortController().signal, {
+      expectedSourceRecordId: disabled.sourceRecordId,
+    })).rejects.toThrow('catalog source is not active')
+  })
 })

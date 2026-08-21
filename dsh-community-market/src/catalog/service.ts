@@ -518,11 +518,16 @@ export class DefaultCatalogService implements CatalogService {
     const { scanQuery, locale } = this.scanRequest(options)
     const sourceGenerationsAtLoadStart = new Map(this.sourceGenerations)
     const records = await this.loadOrderedSources(signal)
-    const source = records.find(record => record.enabled)
-    if (
-      options.expectedSourceRecordId !== undefined
-      && source?.sourceRecordId !== options.expectedSourceRecordId
-    ) {
+    // When the Host asks for one specific source, resolve exactly that source
+    // rather than the first enabled source in order. With multiple sources
+    // enabled (e.g. dshfind + 1024Store), the first-enabled shortcut would
+    // reject any non-first source as "not active" before it ever scanned.
+    const source = options.expectedSourceRecordId === undefined
+      ? records.find(record => record.enabled)
+      : records.find(record => (
+        record.enabled && record.sourceRecordId === options.expectedSourceRecordId
+      ))
+    if (options.expectedSourceRecordId !== undefined && source === undefined) {
       throw new Error('catalog source is not active')
     }
     if (source === undefined) return undefined

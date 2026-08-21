@@ -14,6 +14,7 @@ const DSHFIND_ORIGIN = `https://${DSHFIND_HOSTNAME}`
 const DSHFIND_PAGE_SIZE = 100
 const MAX_DSHFIND_ITEMS = 10_000
 const MAX_DSHFIND_PAGES = 100
+const DEFAULT_MAX_SCAN_PAGES = 4
 const DEFAULT_INTER_PAGE_DELAY_MS = 2_100
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/u
 const GITHUB_OWNER_PATTERN = /^[a-z0-9][a-z0-9-]{0,99}$/iu
@@ -49,6 +50,14 @@ interface DshfindDatasetIdentity {
 export interface DshfindAdapterOptions {
   /** Keep the anonymous production client below dshfind's documented 30/minute quota. */
   readonly interPageDelayMs?: number
+  /**
+   * Maximum provider pages scanned in one catalog scan. The live dshfind
+   * catalog (9k+ items, 97 pages) cannot be fully fetched within a sane
+   * deadline at the quota-safe inter-page delay, so the scan degrades
+   * honestly: it returns the first `maxScanPages` pages (default 4 =
+   * 400 items, ~6.5s) with `page.total` reflecting the received count.
+   */
+  readonly maxScanPages?: number
   readonly now?: () => Date
 }
 
@@ -404,6 +413,10 @@ export function createDshfindAdapter(options: DshfindAdapterOptions = {}): Catal
   if (!Number.isSafeInteger(interPageDelayMs) || interPageDelayMs < 0) {
     throw new TypeError('invalid dshfind inter-page delay')
   }
+  const maxScanPages = options.maxScanPages ?? DEFAULT_MAX_SCAN_PAGES
+  if (!Number.isSafeInteger(maxScanPages) || maxScanPages < 1) {
+    throw new TypeError('invalid dshfind scan page budget')
+  }
   const now = options.now ?? (() => new Date())
 
   const scanCatalog: NonNullable<CatalogAdapter['scanCatalog']> = async (_query, context) => {
@@ -454,6 +467,7 @@ export function createDshfindAdapter(options: DshfindAdapterOptions = {}): Catal
 
       if (page.totalPages === 0 || expectedPage >= page.totalPages) break
       if (expectedPage >= MAX_DSHFIND_PAGES) throw new Error('dshfind catalog exceeded the page limit')
+      if (expectedPage >= maxScanPages) break
       await waitForNextPage(interPageDelayMs, context.signal)
       expectedPage += 1
     }
