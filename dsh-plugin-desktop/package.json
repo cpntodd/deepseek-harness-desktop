@@ -127,6 +127,7 @@
     "dist:mac-smoke": "node scripts/package-mac.ts",
     "dist:win": "node scripts/package-win.ts",
     "dist:win-portable": "node scripts/package-win-portable.ts",
+    "dist:linux": "node scripts/package-linux.mjs",
     "prepack": "yarn run check"
   },
   "dependencies": {
@@ -340,7 +341,8 @@
     },
     "linux": {
       "target": [
-        "dir"
+        "dir",
+        "AppImage"
       ],
       "icon": "build/app-icon.png"
     }
