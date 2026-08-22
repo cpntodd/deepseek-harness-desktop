@@ -131,13 +131,52 @@ function matchesCatalogQuery(item: CatalogItem, query: CatalogQuery): boolean {
   return search === undefined || normalizedSearchText(item).includes(search)
 }
 
+function catalogSortTimestamp(item: CatalogItem, field: 'updatedAt' | 'publishedAt'): number | undefined {
+  const value = item[field]
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+/** Missing sort keys always sink to the end, in both ascending and descending order. */
+function compareCatalogTimestamps(left: number | undefined, right: number | undefined, direction: 1 | -1): number {
+  if (left !== undefined && right !== undefined) return (right - left) * direction
+  if (left === right) return 0
+  return left === undefined ? 1 : -1
+}
+
+function compareCatalogNames(left: CatalogItem, right: CatalogItem, locale: string | undefined): number {
+  return left.displayName.localeCompare(right.displayName, locale ?? 'en', { sensitivity: 'base' })
+}
+
 function sortCatalogItems(items: readonly CatalogItem[], query: CatalogQuery): readonly CatalogItem[] {
-  if (query.sort === undefined || query.sort === 'relevance' || query.sort === 'downloads') return items
+  const sort = query.sort
+  if (sort === undefined || sort === 'relevance') return items
   return items.map((item, position) => ({ item, position })).sort((left, right) => {
-    const compared = query.sort === 'name'
-      ? left.item.displayName.localeCompare(right.item.displayName, query.locale ?? 'en', { sensitivity: 'base' })
-      : (Date.parse(right.item.updatedAt ?? '') || 0) - (Date.parse(left.item.updatedAt ?? '') || 0)
-    return compared || left.position - right.position
+    const leftItem = left.item
+    const rightItem = right.item
+    let compared: number
+    if (sort === 'name') {
+      compared = compareCatalogNames(leftItem, rightItem, query.locale)
+    } else if (sort === 'newest' || sort === 'oldest') {
+      compared = compareCatalogTimestamps(
+        catalogSortTimestamp(leftItem, 'publishedAt'),
+        catalogSortTimestamp(rightItem, 'publishedAt'),
+        sort === 'newest' ? 1 : -1,
+      )
+    } else if (sort === 'popular') {
+      compared = (rightItem.downloads ?? 0) - (leftItem.downloads ?? 0)
+        || (rightItem.stars ?? 0) - (leftItem.stars ?? 0)
+    } else if (sort === 'downloads') {
+      compared = (rightItem.downloads ?? 0) - (leftItem.downloads ?? 0)
+    } else {
+      compared = compareCatalogTimestamps(
+        catalogSortTimestamp(leftItem, 'updatedAt'),
+        catalogSortTimestamp(rightItem, 'updatedAt'),
+        1,
+      )
+    }
+    return compared || compareCatalogNames(leftItem, rightItem, query.locale) || left.position - right.position
   }).map(value => value.item)
 }
 

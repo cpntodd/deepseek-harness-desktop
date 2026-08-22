@@ -1,4 +1,5 @@
 import type {
+  CatalogSort,
   MarketCatalogResponse,
   MarketDesktopActionResponse,
   MarketInstallableResponse,
@@ -14,6 +15,7 @@ import type {
   MarketSourceMutation,
   MarketStateResponse,
 } from '../api-types.js'
+import { DEFAULT_CATALOG_SORT } from '../api-types.js'
 
 const CATALOG_PAGE_LIMIT = 50
 
@@ -48,12 +50,19 @@ export async function readMarketState(signal?: AbortSignal): Promise<MarketState
   }))
 }
 
-function marketCatalogUrl(sourceRecordId: string, q: string, locale: string, categories: readonly string[]): URL {
+function marketCatalogUrl(
+  sourceRecordId: string,
+  q: string,
+  locale: string,
+  categories: readonly string[],
+  sort: CatalogSort,
+): URL {
   const url = new URL('/api/community-market/catalog', window.location.origin)
   url.searchParams.set('sourceRecordId', sourceRecordId)
   if (q.trim()) url.searchParams.set('q', q.trim())
   for (const category of categories) url.searchParams.append('category', category)
   url.searchParams.set('limit', String(CATALOG_PAGE_LIMIT))
+  url.searchParams.set('sort', sort)
   url.searchParams.set('locale', locale)
   return url
 }
@@ -63,10 +72,11 @@ export async function readMarketCatalog(
   q: string,
   locale: string,
   categories: readonly string[],
+  sort: CatalogSort = DEFAULT_CATALOG_SORT,
   signal?: AbortSignal,
   refresh = false,
 ): Promise<MarketCatalogResponse> {
-  const url = marketCatalogUrl(sourceRecordId, q, locale, categories)
+  const url = marketCatalogUrl(sourceRecordId, q, locale, categories, sort)
   if (refresh) url.searchParams.set('refresh', '1')
   return await readJson(await fetch(url, {
     cache: 'no-store',
@@ -80,9 +90,10 @@ export async function readMoreMarketCatalog(
   q: string,
   locale: string,
   categories: readonly string[],
+  sort: CatalogSort = DEFAULT_CATALOG_SORT,
   signal?: AbortSignal,
 ): Promise<MarketCatalogResponse> {
-  const url = marketCatalogUrl(sourceRecordId, q, locale, categories)
+  const url = marketCatalogUrl(sourceRecordId, q, locale, categories, sort)
   url.searchParams.set('cursor', cursor)
   return await readJson(await fetch(url, {
     cache: 'no-store',

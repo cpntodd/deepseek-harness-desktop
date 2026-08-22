@@ -20,7 +20,10 @@ export interface CatalogQuery {
   capability?: CapabilityId[]
   cursor?: string
   limit?: number
-  sort?: 'relevance' | 'updated' | 'name' | 'downloads'
+  /**
+   * Provider-declared wire sort values, plus the local index sorts the Desktop product exposes over the complete scanned catalog. Newest and oldest order by the provider-claimed publishedAt; popular orders by the provider-claimed downloads then stars. Local sorts never travel to the provider wire request.
+   */
+  sort?: 'relevance' | 'updated' | 'name' | 'downloads' | 'newest' | 'oldest' | 'popular'
   /**
    * A BCP 47-like language tag.
    */

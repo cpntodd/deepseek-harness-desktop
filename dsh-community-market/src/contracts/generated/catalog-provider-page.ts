@@ -24,6 +24,18 @@ export type Item = Item1 & {
   capabilities?: Capabilities
   compatibility?: Compatibility
   updatedAt?: string
+  /**
+   * Optional provider-claimed first-publication time. It is a provider claim, not a Host observation or an endorsement.
+   */
+  publishedAt?: string
+  /**
+   * Optional provider-claimed install/download count used for local popularity ordering. It is a provider claim, never a verification signal.
+   */
+  downloads?: number
+  /**
+   * Optional provider-claimed star count used as the popularity tie-break. It is a provider claim, never a verification signal.
+   */
+  stars?: number
 }
 export type Item1 =
   | {

@@ -137,7 +137,7 @@ A public v1 normalized snapshot contains:
 - normalized plugin items;
 - pagination metadata with an optional opaque next cursor and total.
 
-Each item has stable source-local identity, display text, and explicit Host-injected provenance. It may identify an npm package, a canonical repository plus optional subdirectory, or both. It may also contain bounded descriptive metadata, categories, capabilities, compatibility claims, update time, and Host-resolved media. It never contains an install command, shell fragment, HTML, script, executable callback, remote media URL, or filesystem path.
+Each item has stable source-local identity, display text, and explicit Host-injected provenance. It may identify an npm package, a canonical repository plus optional subdirectory, or both. It may also contain bounded descriptive metadata, categories, capabilities, compatibility claims, provider-claimed publication time (`publishedAt`), update time (`updatedAt`), non-negative provider-claimed popularity counts (`downloads` and `stars`), and Host-resolved media. These counts and dates are display/order inputs, not Host verification or endorsement signals. It never contains an install command, shell fragment, HTML, script, executable callback, remote media URL, or filesystem path.
 
 Within one provider page, every item `id` must be unique. The adapter rejects duplicate IDs before provenance is injected. In the normalized snapshot, every `provenance.itemId` must exactly equal its containing item `id`.
 
@@ -180,7 +180,7 @@ The Host first builds and validates a [`CatalogQuery`](schemas/catalog-query.sch
 | `capability` | zero or more | Fabric/host capability IDs. Repeated values mean the item must declare all requested capabilities. Duplicates are invalid. |
 | `cursor` | zero or one | Opaque continuation value returned by the same source for the same effective filters and sort. Maximum 2048 characters. |
 | `limit` | zero or one | Integer from 1 through 100. The normalized Host query defaults to 50; the effective requested value cannot exceed the manifest's `maxLimit`. |
-| `sort` | zero or one | One of `relevance`, `updated`, `name`, or `downloads`, and also declared by the source manifest. |
+| `sort` | zero or one | One of `relevance`, `updated`, `name`, `downloads`, `newest`, `oldest`, or `popular`. `newest`, `oldest`, and `popular` are local-index product sorts and are not sent to providers; the legacy provider-wire values must also be declared by the source manifest. |
 | `locale` | zero or one | A BCP 47-like language tag such as `zh-CN` or `en`. It is a preference, not permission to omit stable IDs. |
 
 `category` and `capability` are serialized as repeated query parameters. All other fields are single-valued. Query text and values are URL-encoded as data; they are never concatenated into a URL, header, or command without the platform URL builder.
@@ -193,7 +193,7 @@ A provider cursor is scoped to one selected source and one effective wire query.
 
 The current Desktop product first scans the complete selected source. For a standard source, the Host sends only supported scan fields such as `cursor`, `limit`, and locale preference, follows `page.nextCursor` until exhaustion, and uses the source's effective page limit rather than treating 50 as a network cap. It does not send the user's search text or selected categories during this scan. The reviewed 1024Store adapter instead downloads its full registry in one request and emits normalized chunks of at most 100 items.
 
-Search, sorting, multi-category OR filtering, category enumeration, and pagination then run over the complete local index. The catalog response's category choices cover all categories present in that index, and each visible UI page contains at most 50 matching items. **Load more** advances a Host-owned local cursor; it does not send another filtered provider request.
+Search, sorting, multi-category OR filtering, category enumeration, and pagination then run over the complete local index. The catalog response's category choices cover all categories present in that index, and each visible UI page contains at most 50 matching items. **Load more** advances a Host-owned local cursor; it does not send another filtered provider request. The Discover UI exposes `Newest` and `Oldest` using `publishedAt`, `Recently updated` using `updatedAt`, and `Popular` using `downloads` followed by `stars`; missing sort values sink to the end. These product sorts are local and do not require provider-side sort support.
 
 Only a successful JSON response that passes the provider-page schema is accepted from a standard source. The adapter then injects Host provenance and validates the normalized snapshot schema. A timeout, non-200 response, wrong content type, oversized body, parse error, unsupported schema version, or either validation error fails that source request without affecting application startup. A standard response containing more items than the effective `limit` is rejected.
 

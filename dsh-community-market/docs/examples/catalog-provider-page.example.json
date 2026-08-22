@@ -49,7 +49,10 @@
           "gui>=2.0"
         ]
       },
-      "updatedAt": "2026-08-16T10:30:00Z"
+      "updatedAt": "2026-08-16T10:30:00Z",
+      "publishedAt": "2026-08-01T09:00:00Z",
+      "downloads": 12840,
+      "stars": 312
     }
   ],
   "page": {

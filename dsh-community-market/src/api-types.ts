@@ -1,7 +1,14 @@
 import type { CatalogSnapshot } from './contracts/generated/catalog-snapshot.js'
+import type { CatalogQuery } from './contracts/generated/catalog-query.js'
 import type { CatalogSourceManifest } from './contracts/generated/catalog-source.js'
 import type { LocalSourceRecord } from './contracts/types.js'
 import type { McpInstallMethod, McpInstallReceipt, McpManualInstall } from './mcp/contracts/types.js'
+
+/** Local product sort values exposed by the Discover sort control. */
+export type CatalogSort = NonNullable<CatalogQuery['sort']>
+
+/** The product default Discover ordering: most recently updated first. */
+export const DEFAULT_CATALOG_SORT: CatalogSort = 'updated'
 
 export interface MarketBuiltInProvider {
   readonly key: string
@@ -64,6 +71,12 @@ export interface MarketCatalogResponse {
   readonly results: readonly MarketCatalogSourceResult[]
   /** Categories derived from the complete active-source index, not only this page. */
   readonly categories: readonly string[]
+  /**
+   * Local sort values the complete active-source index can actually honor,
+   * derived from which normalized items carry publishedAt, updatedAt, and
+   * popularity data. Absent only when no index is available.
+   */
+  readonly sortAvailability?: readonly CatalogSort[]
   /** Display-only hints for items in this response page; never executable targets. */
   readonly manualInstall: readonly MarketManualInstallHint[]
   readonly metadata?: MarketCatalogMetadata

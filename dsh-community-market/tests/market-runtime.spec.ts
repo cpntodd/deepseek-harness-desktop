@@ -11,6 +11,7 @@ import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type {
   CatalogHttpClient,
   CatalogProviderPage,
+  CatalogSnapshot,
   CatalogSourceManifest,
   LocalSourceRecord,
 } from '../src/contracts/index.js'
@@ -68,7 +69,7 @@ const rawCatalog = {
   }],
 }
 
-function catalogIndex(record: LocalSourceRecord = source()): CatalogFullIndex {
+function catalogIndex(record: LocalSourceRecord = source(), items: readonly CatalogSnapshot['items'][number][] = []): CatalogFullIndex {
   return {
     source: {
       ...record,
@@ -76,7 +77,19 @@ function catalogIndex(record: LocalSourceRecord = source()): CatalogFullIndex {
       endpoint: 'https://deepseek1024.com/api/v1/plugins',
       partnership: true,
     },
-    snapshots: [],
+    snapshots: items.length === 0 ? [] : [{
+      schemaVersion: '1.0.0',
+      source: {
+        sourceRecordId: record.sourceRecordId,
+        providerId: record.providerId,
+        adapterId: record.adapterId,
+        registrationKind: record.registrationKind,
+        fetchedAt: '2026-08-18T00:00:00.000Z',
+        finalUrl: 'https://deepseek1024.com/api/v1/plugins',
+      },
+      items: [...items],
+      page: { total: items.length },
+    }],
     scannedAt: '2026-08-18T00:00:00.000Z',
     expiresAt: '2026-08-18T00:05:00.000Z',
     providerRevision: 'sha256:fixture',
@@ -673,6 +686,63 @@ describe('standard source registration trust boundary', () => {
       { getJson },
     )).rejects.toThrow(/standard HTTPS port 443/u)
     expect(getJson).not.toHaveBeenCalled()
+  })
+})
+
+describe('local catalog sorting', () => {
+  const sortableItem = (id: string, displayName: string, fields: Partial<CatalogSnapshot['items'][number]> = {}): CatalogSnapshot['items'][number] => ({
+    id,
+    name: id,
+    displayName,
+    summary: displayName,
+    repository: { url: `https://github.com/example/${id}` },
+    provenance: {
+      sourceRecordId: source().sourceRecordId,
+      providerId: DSH_1024STORE_PROVIDER_ID,
+      itemId: id,
+    },
+    ...fields,
+  })
+
+  it.each([
+    ['newest', ['new', 'old', 'missing']],
+    ['oldest', ['old', 'new', 'missing']],
+  ] as const)('sorts by %s publication date and sinks missing dates', (sort, expected) => {
+    const service = new DefaultCatalogService(new MemoryCatalogSourceStore(), { getJson: vi.fn() })
+    const index = catalogIndex(source(), [
+      sortableItem('old', 'Old', { publishedAt: '2026-01-01T00:00:00Z' }),
+      sortableItem('missing', 'Missing'),
+      sortableItem('new', 'New', { publishedAt: '2026-02-01T00:00:00Z' }),
+    ])
+    const results = service.queryCatalog(index, { sort, limit: 10 })
+    expect(results[0]?.snapshot?.items.map(item => item.id)).toEqual(expected)
+  })
+
+  it('sorts popular by downloads, then stars, with stable name tie-breaking', () => {
+    const service = new DefaultCatalogService(new MemoryCatalogSourceStore(), { getJson: vi.fn() })
+    const index = catalogIndex(source(), [
+      sortableItem('stars', 'Stars', { downloads: 5, stars: 20 }),
+      sortableItem('downloads', 'Downloads', { downloads: 10, stars: 1 }),
+      sortableItem('tie-z', 'Zed', { downloads: 5, stars: 20 }),
+    ])
+    const results = service.queryCatalog(index, { sort: 'popular', limit: 10 })
+    expect(results[0]?.snapshot?.items.map(item => item.id)).toEqual(['downloads', 'stars', 'tie-z'])
+  })
+
+  it('sorts recently updated independently from newest', () => {
+    const service = new DefaultCatalogService(new MemoryCatalogSourceStore(), { getJson: vi.fn() })
+    const index = catalogIndex(source(), [
+      sortableItem('old-release', 'Old Release', {
+        publishedAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-03-01T00:00:00Z',
+      }),
+      sortableItem('new-release', 'New Release', {
+        publishedAt: '2026-02-01T00:00:00Z',
+        updatedAt: '2026-02-01T00:00:00Z',
+      }),
+    ])
+    expect(service.queryCatalog(index, { sort: 'newest', limit: 10 })[0]?.snapshot?.items[0]?.id).toBe('new-release')
+    expect(service.queryCatalog(index, { sort: 'updated', limit: 10 })[0]?.snapshot?.items[0]?.id).toBe('old-release')
   })
 })
 

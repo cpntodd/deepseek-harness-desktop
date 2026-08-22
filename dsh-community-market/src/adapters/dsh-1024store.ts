@@ -73,6 +73,11 @@ function plainText(value: unknown, max: number, fallback: string): string {
   return value
 }
 
+/** Popularity counts are provider claims; only bounded non-negative integers survive normalization. */
+function countMetric(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
 function completeCatalogQuery(query: CatalogQuery): boolean {
   return query.q === undefined
     && (query.category === undefined || query.category.length === 0)
@@ -257,7 +262,9 @@ function normalizedItem(
     const npmTarget = reviewedNpmTarget(item)
     const addedAt = typeof item.added === 'string' && !Number.isNaN(Date.parse(item.added))
       ? Date.parse(item.added)
-      : 0
+      : undefined
+    const stars = countMetric(item.stars)
+    const downloads = countMetric(item.installCount)
     const normalized: CatalogSnapshot['items'][number] = {
       id,
       name,
@@ -271,6 +278,9 @@ function normalizedItem(
         package: { registry: 'npm' as const, name: npmTarget.name },
       }),
       ...(owner === undefined ? {} : { publisher: { name: owner, url: `https://github.com/${owner}` } }),
+      ...(stars === undefined ? {} : { stars }),
+      ...(downloads === undefined ? {} : { downloads }),
+      ...(addedAt === undefined ? {} : { publishedAt: new Date(addedAt).toISOString() }),
       ...(pushedAt === undefined ? {} : { updatedAt: pushedAt }),
       provenance: {
         sourceRecordId: context.source.sourceRecordId,
@@ -281,19 +291,44 @@ function normalizedItem(
     return {
       item: normalized,
       mediaCandidates: mediaCandidates(item, repository.url),
-      stars: typeof item.stars === 'number' && Number.isFinite(item.stars) ? item.stars : 0,
-      downloads: typeof item.installCount === 'number' && Number.isFinite(item.installCount) ? item.installCount : 0,
-      updatedAt: pushedAt === undefined ? addedAt : Date.parse(pushedAt),
+      stars: stars ?? 0,
+      downloads: downloads ?? 0,
+      updatedAt: pushedAt === undefined ? addedAt ?? 0 : Date.parse(pushedAt),
     }
   } catch {
     return undefined
   }
 }
 
+function publishedAtMillis(item: CatalogSnapshot['items'][number]): number | undefined {
+  const value = item.publishedAt
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
 function compareCandidates(left: RegistryCandidate, right: RegistryCandidate, query: CatalogQuery): number {
   if (query.sort === 'name') return left.item.displayName.localeCompare(right.item.displayName, 'en', { sensitivity: 'base' })
   if (query.sort === 'updated') return right.updatedAt - left.updatedAt || right.stars - left.stars
   if (query.sort === 'downloads') return right.downloads - left.downloads || right.stars - left.stars
+  if (query.sort === 'popular') {
+    return right.downloads - left.downloads
+      || right.stars - left.stars
+      || left.item.displayName.localeCompare(right.item.displayName, 'en', { sensitivity: 'base' })
+  }
+  if (query.sort === 'newest' || query.sort === 'oldest') {
+    const leftPublished = publishedAtMillis(left.item)
+    const rightPublished = publishedAtMillis(right.item)
+    if (leftPublished !== undefined && rightPublished !== undefined) {
+      const compared = query.sort === 'newest'
+        ? rightPublished - leftPublished
+        : leftPublished - rightPublished
+      if (compared !== 0) return compared
+    } else if (leftPublished !== rightPublished) {
+      return leftPublished === undefined ? 1 : -1
+    }
+    return left.item.displayName.localeCompare(right.item.displayName, 'en', { sensitivity: 'base' })
+  }
   return right.stars - left.stars || left.item.displayName.localeCompare(right.item.displayName, 'en', { sensitivity: 'base' })
 }
 

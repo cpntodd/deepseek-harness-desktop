@@ -137,7 +137,7 @@ Provider 输入绝不提供 Host provenance。Response 成功后，adapter 注�
 - 标准化插件条目；
 - 带可选不透明 next cursor 和 total 的分页信息。
 
-每个条目都有稳定的来源内身份、展示文本和由 Host 注入的明确 provenance。它可以声明 npm package、规范化 repository 加可选 subdirectory，或同时声明两者；也可以包含有界的描述元数据、分类、capability、兼容性声明、更新时间和 Host 已解析的媒体。条目绝不包含 install command、shell fragment、HTML、script、可执行 callback、远程媒体 URL 或文件系统路径。
+每个条目都有稳定的来源内身份、展示文本和由 Host 注入的明确 provenance。它可以声明 npm package、规范化 repository 加可选 subdirectory，或同时声明两者；也可以包含有界的描述元数据、分类、capability、兼容性声明、provider 声明的首次发布时间（`publishedAt`）、更新时间（`updatedAt`）、非负的 provider 热度计数（`downloads` 和 `stars`）以及 Host 已解析的媒体。这些日期和计数只用于展示和排序，不是 Host 验证或背书信号。条目绝不包含 install command、shell fragment、HTML、script、可执行 callback、远程媒体 URL 或文件系统路径。
 
 同一页 provider response 中，每个条目的 `id` 必须唯一。Adapter 必须在注入 provenance 之前拒绝重复 ID。标准化快照中的每个 `provenance.itemId` 必须与所在条目的 `id` 完全一致。
 
@@ -180,7 +180,7 @@ Host 先构造并校验 [`CatalogQuery`](schemas/catalog-query.schema.json)，�
 | `capability` | 0 或多个 | Fabric/host capability ID。重复参数表示条目必须声明全部请求 capability；不允许重复值。 |
 | `cursor` | 0 或 1 个 | 同一来源在相同有效 filter 和 sort 下返回的不透明 continuation value，最长 2048 字符。 |
 | `limit` | 0 或 1 个 | 1 到 100 的整数。Host 标准化 query 默认值为 50；有效请求值不能超过 manifest `maxLimit`。 |
-| `sort` | 0 或 1 个 | `relevance`、`updated`、`name` 或 `downloads` 之一，并且来源 manifest 也必须声明支持该值。 |
+| `sort` | 0 或 1 个 | `relevance`、`updated`、`name`、`downloads`、`newest`、`oldest` 或 `popular` 之一。`newest`、`oldest` 和 `popular` 是本地索引排序，不会发送给 provider；旧的 provider wire 排序值仍必须由来源 manifest 声明。 |
 | `locale` | 0 或 1 个 | 类 BCP 47 语言标签，例如 `zh-CN` 或 `en`。它只是偏好，provider 仍必须返回稳定 ID。 |
 
 `category` 和 `capability` 序列化为重复 query 参数，其余字段都是单值。Query 文本和值必须由平台 URL builder 作为数据进行 URL encode，不能直接拼接进 URL、header 或命令。
@@ -193,7 +193,7 @@ Provider cursor 只属于一个已选来源和一个有效 wire query。Host 绝
 
 当前 Desktop 产品会先完整扫描已选来源。对于标准来源，Host 只发送 `cursor`、`limit` 和 locale 偏好等来源支持的扫描字段，跟随 `page.nextCursor` 直到结束，并使用来源的有效 page limit，而不是把 50 当成网络上限。扫描不会把用户搜索文本或已选分类发给 provider。经过审核的 1024Store adapter 则通过一次请求下载完整 registry，并输出每块最多 100 条的标准化分块。
 
-搜索、排序、多分类 OR 筛选、分类枚举和分页随后都在完整本地索引上运行。目录 response 中的分类选项覆盖索引中存在的全部分类，每个 UI 可见页面最多包含 50 条匹配结果。**加载更多**只推进 Host 拥有的本地 cursor，不会再次发送带筛选的 provider 请求。
+搜索、排序、多分类 OR 筛选、分类枚举和分页随后都在完整本地索引上运行。目录 response 中的分类选项覆盖索引中存在的全部分类，每个 UI 可见页面最多包含 50 条匹配结果。**加载更多**只推进 Host 拥有的本地 cursor，不会再次发送带筛选的 provider 请求。Discover UI 使用 `publishedAt` 提供“最新发布”和“最早发布”，使用 `updatedAt` 提供“最近更新”，并使用 `downloads` 再以 `stars` 作为次级排序提供“最受欢迎”；缺少排序字段的条目会排在末尾。这些产品排序是本地完成的，不要求 provider 支持排序。
 
 标准来源只有返回通过 provider-page schema 的成功 JSON response 才能接受。Adapter 随后注入 Host provenance，再校验标准化 snapshot schema。超时、非 200、错误 content type、响应过大、解析失败、不支持的 schema version 或任一校验错误只会让该来源请求失败，不影响应用启动。标准 response 条目数超过有效 `limit` 时也必须拒绝。
 

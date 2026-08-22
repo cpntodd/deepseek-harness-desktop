@@ -59,6 +59,9 @@
         ]
       },
       "updatedAt": "2026-08-16T10:30:00Z",
+      "publishedAt": "2026-08-01T09:00:00Z",
+      "downloads": 12840,
+      "stars": 312,
       "provenance": {
         "sourceRecordId": "018f1f77-a5c4-7b73-a9ae-0242ac120002",
         "providerId": "org.example.community-catalog",

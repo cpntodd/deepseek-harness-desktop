@@ -40,6 +40,8 @@ describe('desktop escalation protocol prompt section', () => {
     expect(rendered).toContain(ESCALATION_PROTOCOL_TEXT)
     expect(rendered).toContain('narrowest strictly-wider mode')
     expect(rendered).toContain('Never send an empty justification')
+    expect(rendered).toContain('when the current policy is danger-full-access')
+    expect(rendered).toContain('Approval prompts may be disabled')
   })
 
   it('registers the section through ctx.effect and disposes it', () => {

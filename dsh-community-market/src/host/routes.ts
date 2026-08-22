@@ -8,6 +8,7 @@ import type { CatalogSourceManifest } from '../contracts/index.js'
 import { parseCatalogSnapshot, parseCatalogSource, validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CatalogHttpClient } from '../contracts/types.js'
 import type {
+  CatalogSort,
   MarketBuiltInProvider,
   MarketCatalogErrorCode,
   MarketCatalogMetadata,
@@ -18,6 +19,7 @@ import type {
   MarketSourceMutation,
   MarketStateResponse,
 } from '../api-types.js'
+import { DEFAULT_CATALOG_SORT } from '../api-types.js'
 import { CatalogContractError } from '../contracts/errors.js'
 import {
   CatalogNetworkError,
@@ -216,6 +218,19 @@ function catalogCategories(index: CatalogFullIndex): readonly string[] {
     .sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' }))
 }
 
+type CatalogIndexItem = CatalogFullIndex['snapshots'][number]['items'][number]
+
+function catalogSortAvailability(items: readonly CatalogIndexItem[]): readonly CatalogSort[] {
+  const hasPublishedAt = items.some(item => item.publishedAt !== undefined)
+  const hasUpdatedAt = items.some(item => item.updatedAt !== undefined)
+  const hasPopularity = items.some(item => item.downloads !== undefined || item.stars !== undefined)
+  const sorts: CatalogSort[] = []
+  if (hasPublishedAt) sorts.push('newest', 'oldest')
+  if (hasUpdatedAt) sorts.push('updated')
+  if (hasPopularity) sorts.push('popular')
+  return sorts
+}
+
 function catalogManualInstall(results: readonly { readonly snapshot?: { readonly items: CatalogFullIndex['snapshots'][number]['items'] } }[]): readonly MarketManualInstallHint[] {
   return manualInstallHints(results.flatMap(result => result.snapshot?.items ?? []))
 }
@@ -251,9 +266,10 @@ function cachedCatalogResponse(
     || snapshot.source.registrationKind !== source.registrationKind
   ) return undefined
   return {
-    query: { limit: 50, locale },
+    query: { limit: 50, sort: DEFAULT_CATALOG_SORT, locale },
     results: [{ source, stale: true, snapshot }],
     categories: [...cache.categories],
+    sortAvailability: catalogSortAvailability(snapshot.items),
     manualInstall: catalogManualInstall([{ snapshot }]),
     metadata: {
       scannedAt: cache.scannedAt,
@@ -967,7 +983,10 @@ export function registerMarketRoutes(
       results,
       categories: index === undefined ? [] : catalogCategories(index),
       manualInstall: catalogManualInstall(results),
-      ...(index === undefined ? {} : { metadata: catalogMetadata(index) }),
+      ...(index === undefined ? {} : {
+        metadata: catalogMetadata(index),
+        sortAvailability: catalogSortAvailability(index.snapshots.flatMap(snapshot => snapshot.items)),
+      }),
       fetchedAt: new Date().toISOString(),
     }
   }
@@ -1055,7 +1074,7 @@ export function registerMarketRoutes(
         const localeKey = locale ?? ''
         const previewSourceRecordId = q === undefined
           && categories.length === 0
-          && sort === null
+          && (sort === null || sort === DEFAULT_CATALOG_SORT)
           && limit === 50
           && scope !== undefined
           && scope.cursor === undefined
@@ -1369,7 +1388,7 @@ export function registerMarketRoutes(
               servedCatalogPreviews.add(catalogPreviewKey(index.source.sourceRecordId, localeKey))
               const preview = buildCatalogResponse(
                 index,
-                { limit: 50, ...(localeKey === '' ? {} : { locale: localeKey }) },
+                { limit: 50, sort: DEFAULT_CATALOG_SORT, ...(localeKey === '' ? {} : { locale: localeKey }) },
                 { sourceRecordId: index.source.sourceRecordId },
               )
               void persistCatalogResponse(preview, index.source.sourceRecordId, localeKey)

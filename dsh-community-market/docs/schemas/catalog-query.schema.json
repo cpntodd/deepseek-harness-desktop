@@ -41,11 +41,15 @@
       "default": 50
     },
     "sort": {
+      "description": "Provider-declared wire sort values, plus the local index sorts the Desktop product exposes over the complete scanned catalog. Newest and oldest order by the provider-claimed publishedAt; popular orders by the provider-claimed downloads then stars. Local sorts never travel to the provider wire request.",
       "enum": [
         "relevance",
         "updated",
         "name",
-        "downloads"
+        "downloads",
+        "newest",
+        "oldest",
+        "popular"
       ],
       "default": "relevance"
     },

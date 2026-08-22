@@ -265,6 +265,7 @@ describe('MarketSettingsTab', () => {
       '',
       'en',
       [],
+      'updated',
       expect.any(AbortSignal),
       false,
     )
@@ -296,6 +297,7 @@ describe('MarketSettingsTab', () => {
       '',
       'en',
       [],
+      'updated',
       expect.any(AbortSignal),
       true,
     )
@@ -346,6 +348,7 @@ describe('MarketSettingsTab', () => {
       '',
       'en',
       [],
+      'updated',
       expect.any(AbortSignal),
       false,
     )
@@ -357,6 +360,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         [],
+        'updated',
         expect.any(AbortSignal),
         true,
       )
@@ -1305,6 +1309,7 @@ describe('MarketSettingsTab', () => {
       'matched',
       'en',
       [],
+      'updated',
       expect.any(AbortSignal),
       false,
     )
@@ -1317,6 +1322,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         [],
+        'updated',
         expect.any(AbortSignal),
         false,
       )
@@ -1383,6 +1389,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         [],
+        'updated',
         expect.any(AbortSignal),
       )
     })
@@ -1419,6 +1426,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         [],
+        'updated',
         expect.any(AbortSignal),
       )
     })
@@ -1466,6 +1474,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         ['interface'],
+        'updated',
         expect.any(AbortSignal),
         false,
       )
@@ -1483,6 +1492,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         ['interface', 'tools'],
+        'updated',
         expect.any(AbortSignal),
         false,
       )
@@ -1500,6 +1510,7 @@ describe('MarketSettingsTab', () => {
         '',
         'en',
         ['tools'],
+        'updated',
         expect.any(AbortSignal),
         false,
       )

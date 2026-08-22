@@ -105,6 +105,43 @@ const css = `
   flex: 1;
 }
 
+.dshMarketSort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dshMarketSortLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.dshMarketSortSelect {
+  max-width: 180px;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.dshMarketSortSelect:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.dshMarketSortSelect:focus-visible {
+  outline: 2px solid var(--dsw-alias-primary);
+  outline-offset: 1px;
+}
+
 .dshMarketBanner {
   display: flex;
   align-items: center;

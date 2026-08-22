@@ -123,19 +123,34 @@ const CSS = `
   gap: 8px;
   padding: 6px 10px;
 }
-.dshDesktopStatusTodoDot {
+.dshDesktopStatusTodoGlyph {
+  display: grid;
   flex: none;
-  width: 9px;
-  height: 9px;
-  margin-top: 5px;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  box-sizing: border-box;
+}
+.dshDesktopStatusTodoGlyphProgress {
+  color: var(--dsw-alias-state-business-primary);
+  animation: dsh-desktop-todo-progress-spin 1s linear infinite;
+}
+.dshDesktopStatusTodoGlyphCompleted {
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 14px;
+  line-height: 16px;
+  font-weight: 700;
+}
+.dshDesktopStatusTodoGlyphPending {
+  width: 14px;
+  height: 14px;
+  margin: 1px;
+  border: 1.2px dashed var(--dsw-alias-label-caption);
   border-radius: 50%;
-  background: var(--dsw-alias-label-tertiary);
 }
-.dshDesktopStatusTodoDot[data-status="in_progress"] {
-  background: var(--dsw-alias-state-business-primary);
-}
-.dshDesktopStatusTodoDot[data-status="completed"] {
-  background: var(--dsw-alias-state-success-primary);
+@keyframes dsh-desktop-todo-progress-spin {
+  to { transform: rotate(360deg); }
 }
 .dshDesktopStatusTodoContent {
   min-width: 0;

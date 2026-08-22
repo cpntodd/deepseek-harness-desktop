@@ -25,6 +25,7 @@ import {
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CatalogSnapshot } from '../contracts/generated/catalog-snapshot.js'
 import type {
+  CatalogSort,
   MarketBuiltInProvider,
   MarketCatalogResponse,
   MarketCatalogSourceResult,
@@ -36,8 +37,10 @@ import type {
   MarketSourceView,
   MarketStateResponse,
 } from '../api-types.js'
+import { DEFAULT_CATALOG_SORT } from '../api-types.js'
 import { marketMediaAssetUrl } from '../media/ref.js'
 import { McpView } from './McpView.js'
+import type { MarketLocaleKey } from './locales.js'
 import {
   executeMarketOperation,
   mutateMarketSource,
@@ -54,6 +57,12 @@ import {
 type MarketItem = CatalogSnapshot['items'][number]
 export type MarketView = 'discover' | 'installable' | 'installed' | 'sources' | 'mcp'
 const INSTALLABLE_PAGE_SIZE = 50
+const CATALOG_SORT_OPTIONS: readonly { readonly value: CatalogSort; readonly labelKey: MarketLocaleKey }[] = [
+  { value: 'newest', labelKey: 'sortNewest' },
+  { value: 'updated', labelKey: 'sortUpdated' },
+  { value: 'popular', labelKey: 'sortPopular' },
+  { value: 'oldest', labelKey: 'sortOldest' },
+]
 const INSTALL_REQUIREMENTS_DOCS = {
   en: 'https://github.com/anywhere-labs/deepseek-harness-desktop/blob/master/dsh-community-market/docs/install-and-uninstall.md',
   zh: 'https://github.com/anywhere-labs/deepseek-harness-desktop/blob/master/dsh-community-market/docs/install-and-uninstall.zh.md',
@@ -228,11 +237,13 @@ function mergeMarketCatalogs(outcomes: readonly CatalogFetchOutcome[]): MarketCa
   })
   const categories = new Set<string>()
   const hints = new Map<string, ManualInstallHint>()
+  const availableSorts = new Set<CatalogSort>()
   let metadata: MarketCatalogResponse['metadata'] | undefined
   for (const outcome of outcomes) {
     if (outcome.response === undefined) continue
     for (const category of outcome.response.categories ?? []) categories.add(category)
     for (const hint of outcome.response.manualInstall ?? []) hints.set(`${hint.sourceRecordId}:${hint.itemId}`, hint)
+    for (const sort of outcome.response.sortAvailability ?? []) availableSorts.add(sort)
     if (metadata === undefined && outcome.response.metadata !== undefined) {
       metadata = outcome.response.metadata
     }
@@ -242,6 +253,7 @@ function mergeMarketCatalogs(outcomes: readonly CatalogFetchOutcome[]): MarketCa
     results,
     categories: [...categories].sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' })),
     manualInstall: [...hints.values()],
+    ...(availableSorts.size === 0 ? {} : { sortAvailability: [...availableSorts] }),
     ...(metadata === undefined ? {} : { metadata }),
     fetchedAt: new Date().toISOString(),
   }
@@ -322,6 +334,8 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
   const [appliedQuery, setAppliedQuery] = useState('')
   const [categoryOptions, setCategoryOptions] = useState<readonly string[]>([])
   const [selectedCategories, setSelectedCategories] = useState<readonly string[]>([])
+  const [sort, setSort] = useState<CatalogSort>(DEFAULT_CATALOG_SORT)
+  const [sortAvailability, setSortAvailability] = useState<readonly CatalogSort[]>()
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string>()
@@ -369,6 +383,9 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
   const desktopActionRequest = useRef<AbortController>()
   const selectedKeyRef = useRef<string>()
   const viewRef = useRef<MarketView>(initialView)
+  // The applied sort is read at request time so changing it re-issues the
+  // first page without re-creating loadCatalog (and re-running the mount effect).
+  const sortRef = useRef<CatalogSort>(DEFAULT_CATALOG_SORT)
 
   const rememberCategories = useCallback((next: MarketCatalogResponse) => {
     setCategoryOptions([...next.categories]
@@ -399,6 +416,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
       return
     }
     const effectiveQuery = q.trim()
+    const effectiveSort = sortRef.current
     const request = new AbortController()
     readRequest.current = request
     setLoading(true)
@@ -407,6 +425,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
       rememberCategories(next)
       setAppliedQuery(effectiveQuery)
       setSelectedCategories([...categories])
+      setSortAvailability(next.sortAvailability)
       setCatalog(next)
     }
     const fetchOutcome = async (source: MarketSourceView, refresh: boolean): Promise<CatalogFetchOutcome> => {
@@ -416,6 +435,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
           effectiveQuery,
           readLocale(),
           categories,
+          effectiveSort,
           request.signal,
           refresh,
         )
@@ -699,6 +719,15 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
     void loadCatalog(state, appliedQuery, categories)
   }
 
+  const changeSort = (next: CatalogSort) => {
+    if (sortRef.current === next) return
+    sortRef.current = next
+    setSort(next)
+    selectedKeyRef.current = undefined
+    setSelected(undefined)
+    if (state !== undefined) void loadCatalog(state, appliedQuery, selectedCategories)
+  }
+
   const loadMore = async () => {
     if (pageRequest.current !== undefined || pageTarget === undefined) return
     const request = new AbortController()
@@ -712,6 +741,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
         appliedQuery,
         readLocale(),
         selectedCategories,
+        sortRef.current,
         request.signal,
       )
       if (request.signal.aborted || pageRequest.current !== request) return
@@ -1085,6 +1115,8 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
             query={query}
             categoryOptions={categoryOptions}
             selectedCategories={selectedCategories}
+            sort={sort}
+            sortAvailability={sortAvailability}
             loading={loading}
             loadingMore={loadingMore}
             mutationPending={mutationPending}
@@ -1095,6 +1127,7 @@ export function MarketSurface({ initialView = 'installable', readLocale, t, show
             onSearch={() => state !== undefined && void loadCatalog(state, query, selectedCategories)}
             onRefresh={() => void loadState(appliedQuery, selectedCategories, true)}
             onToggleCategory={toggleCategory}
+            onSortChange={changeSort}
             onLoadMore={() => { void loadMore() }}
             hasMore={pageTarget !== undefined}
             onSources={() => selectMarketView('sources')}
@@ -1316,6 +1349,8 @@ function DiscoverView(props: {
   query: string
   categoryOptions: readonly string[]
   selectedCategories: readonly string[]
+  sort: CatalogSort
+  sortAvailability: readonly CatalogSort[] | undefined
   loading: boolean
   loadingMore: boolean
   mutationPending: boolean
@@ -1327,6 +1362,7 @@ function DiscoverView(props: {
   onSearch: () => void
   onRefresh: () => void
   onToggleCategory: (category: string) => void
+  onSortChange: (sort: CatalogSort) => void
   onLoadMore: () => void
   onSources: () => void
   onSelect: (value: VisibleItem) => void
@@ -1374,6 +1410,24 @@ function DiscoverView(props: {
             onClick={props.onRefresh}
           />
         </Tooltip>
+        <label className="dshMarketSort">
+          <span className="dshMarketSortLabel">{props.t('sort')}</span>
+          <select
+            className="dshMarketSortSelect"
+            value={props.sort}
+            disabled={props.loading || props.mutationPending}
+            aria-label={props.t('sort')}
+            onChange={event => props.onSortChange(event.currentTarget.value as CatalogSort)}
+          >
+            {CATALOG_SORT_OPTIONS.map(option => (
+              <option
+                key={option.value}
+                value={option.value}
+                disabled={props.sortAvailability !== undefined && !props.sortAvailability.includes(option.value)}
+              >{props.t(option.labelKey)}</option>
+            ))}
+          </select>
+        </label>
         <Pill>{props.items.length}</Pill>
       </form>
       {props.categoryOptions.length > 0 && (

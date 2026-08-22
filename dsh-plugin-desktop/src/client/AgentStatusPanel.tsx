@@ -5,7 +5,7 @@
  * from the same-origin desktop status API (MCP + LSP) and the session's
  * `todos` projection; the panel owns no subscription machinery.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import {
@@ -72,6 +72,27 @@ function LspSection({ providers, t }: { providers: readonly DesktopLspProviderVi
   )
 }
 
+function TodoStatusGlyph({ status }: { status: TodoItem['status'] }) {
+  const gradientId = useId()
+  if (status === 'in_progress') {
+    return (
+      <svg className="dshDesktopStatusTodoGlyph dshDesktopStatusTodoGlyphProgress" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id={gradientId} x1="2.5" y1="12" x2="10.5" y2="3.5" gradientUnits="userSpaceOnUse">
+            <stop stopColor="currentColor" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <circle cx="7" cy="7" r="6.4" stroke={`url(#${gradientId})`} strokeWidth="1.2" />
+      </svg>
+    )
+  }
+  if (status === 'completed') {
+    return <span className="dshDesktopStatusTodoGlyph dshDesktopStatusTodoGlyphCompleted" aria-hidden="true">✓</span>
+  }
+  return <span className="dshDesktopStatusTodoGlyph dshDesktopStatusTodoGlyphPending" aria-hidden="true" />
+}
+
 function TodoSection({ todos, t }: { todos: readonly TodoItem[]; t: AgentStatusPanelProps['t'] }) {
   return (
     <section className="dshDesktopStatusSection">
@@ -82,8 +103,8 @@ function TodoSection({ todos, t }: { todos: readonly TodoItem[]; t: AgentStatusP
       {todos.length === 0
         ? <div className="dshDesktopStatusEmpty">{t('todoEmpty')}</div>
         : todos.map(item => (
-          <div key={item.content} className="dshDesktopStatusTodoRow">
-            <span className="dshDesktopStatusTodoDot" data-status={item.status} />
+          <div key={item.content} className="dshDesktopStatusTodoRow" data-status={item.status}>
+            <TodoStatusGlyph status={item.status} />
             <span className="dshDesktopStatusTodoContent">{item.content}</span>
           </div>
         ))}

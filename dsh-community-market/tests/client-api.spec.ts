@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MarketSourceMutation } from '../src/api-types.js'
+import { DEFAULT_CATALOG_SORT, type MarketSourceMutation } from '../src/api-types.js'
 import {
   executeMarketOperation,
   MarketApiError,
@@ -19,6 +19,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+function urlOf(input: RequestInfo | URL | undefined): URL {
+  return input instanceof URL ? input : new URL(String(input))
+}
+
 describe('community market client API', () => {
   it('binds the initial page to one source, requests 50 items, and repeats category parameters', async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL) => ({
@@ -34,10 +38,27 @@ describe('community market client API', () => {
     expect(url.searchParams.get('sourceRecordId')).toBe('source-record-1')
     expect(url.searchParams.get('q')).toBe('terminal')
     expect(url.searchParams.get('limit')).toBe('50')
+    expect(url.searchParams.get('sort')).toBe(DEFAULT_CATALOG_SORT)
     expect(url.searchParams.get('locale')).toBe('zh-CN')
     expect(url.searchParams.getAll('category')).toEqual(['tools', 'interface'])
     expect(url.searchParams.has('cursor')).toBe(false)
     expect(url.searchParams.has('refresh')).toBe(false)
+  })
+
+  it('sends the selected sort on the initial page and the same sort with a later cursor', async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL) => ({
+      ok: true,
+      json: async () => ({ query: {}, results: [], fetchedAt: '2026-08-18T00:00:00Z' }),
+    } as Response))
+    vi.stubGlobal('fetch', fetch)
+
+    await readMarketCatalog('source-record-1', '', 'en', [], 'popular')
+    await readMoreMarketCatalog('source-record-1', 'opaque cursor/2', '', 'en', [], 'popular')
+
+    expect(urlOf(fetch.mock.calls[0]?.[0]).searchParams.get('sort')).toBe('popular')
+    const moreUrl = urlOf(fetch.mock.calls[1]?.[0])
+    expect(moreUrl.searchParams.get('sort')).toBe('popular')
+    expect(moreUrl.searchParams.get('cursor')).toBe('opaque cursor/2')
   })
 
   it('marks only an explicit catalog refresh as a forced index rescan', async () => {
@@ -47,7 +68,7 @@ describe('community market client API', () => {
     } as Response))
     vi.stubGlobal('fetch', fetch)
 
-    await readMarketCatalog('source-record-1', '', 'en', [], undefined, true)
+    await readMarketCatalog('source-record-1', '', 'en', [], DEFAULT_CATALOG_SORT, undefined, true)
 
     const url = fetch.mock.calls[0]?.[0] as URL
     expect(url.pathname).toBe('/api/community-market/catalog')
@@ -67,6 +88,7 @@ describe('community market client API', () => {
     expect(url.searchParams.get('sourceRecordId')).toBe('source-record-2')
     expect(url.searchParams.get('cursor')).toBe('opaque cursor/2')
     expect(url.searchParams.get('limit')).toBe('50')
+    expect(url.searchParams.get('sort')).toBe(DEFAULT_CATALOG_SORT)
     expect(url.searchParams.getAll('category')).toEqual(['tools'])
   })
 
