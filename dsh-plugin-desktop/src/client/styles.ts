@@ -37,6 +37,40 @@ body[data-dsh-desktop-mode="advanced"] { margin: 0; background: transparent !imp
 .dshDesktopOverlay > * { pointer-events: auto; }
 .dshDesktopResizeHandle { position: absolute; z-index: 50; top: 0; bottom: 0; width: 8px; margin-left: -4px; cursor: col-resize; touch-action: none; -webkit-app-region: no-drag; transition: left var(--ds-transition-duration-slow) var(--ds-ease-in-out); }
 .dshDesktopFrame[data-dragging] .dshDesktopResizeHandle { transition: none; }
+/* Desktop stop-gap: the inline chat Todo strip moves into the right status
+   panel (upstream removal is a separate PR). Hide it in advanced mode. */
+body[data-dsh-desktop-mode="advanced"] [data-testid="todo-panel"] { display: none !important; }
+/* Reopen control for the collapsed right status panel (narrow window or closed). */
+.dshDesktopStatusReopen {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 60;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  line-height: 16px;
+  -webkit-app-region: no-drag;
+}
+.dshDesktopStatusReopen:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.dshDesktopStatusReopenIcon {
+  writing-mode: horizontal-tb;
+  color: var(--dsw-alias-state-business-primary);
+}
 .dshDesktopNoDrag, button, input, textarea, select, a, [role="button"], [role="dialog"], [role="presentation"] { -webkit-app-region: no-drag; }
 [role="dialog"], [aria-modal="true"] { -webkit-app-region: no-drag !important; }
 html:has([aria-modal="true"]) .dshDesktopWindowsCaptionRow::before,

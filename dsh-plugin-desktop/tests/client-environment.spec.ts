@@ -135,13 +135,27 @@ describe('advanced desktop layout', () => {
     const snapshots: object[] = []
     layout.subscribe(() => { snapshots.push(layout.getSnapshot()) })
     layout.toggleSidebar()
-    layout.openDetails()
     layout.closeDetails()
+    layout.openDetails()
     expect(snapshots).toEqual([
-      { sidebar: 0, details: 0, narrow: false, narrowExpanded: false },
-      { sidebar: 0, details: 360, narrow: false, narrowExpanded: false },
-      { sidebar: 0, details: 0, narrow: false, narrowExpanded: false },
+      { sidebar: 0, details: 360, narrow: false, narrowExpanded: false, detailsExpanded: false },
+      { sidebar: 0, details: 0, narrow: false, narrowExpanded: false, detailsExpanded: false },
+      { sidebar: 0, details: 360, narrow: false, narrowExpanded: false, detailsExpanded: false },
     ])
+  })
+
+  it('auto-collapses the status panel on narrow windows and reopens on demand', () => {
+    const layout = new DesktopLayoutState()
+    layout.setNarrow(true)
+    expect(layout.getSnapshot()).toMatchObject({ narrow: true, detailsExpanded: false })
+    layout.openDetails()
+    expect(layout.getSnapshot()).toMatchObject({ narrow: true, detailsExpanded: true })
+    layout.closeDetails()
+    expect(layout.getSnapshot()).toMatchObject({ narrow: true, detailsExpanded: false })
+    // Back to a wide frame: reopen via the width preference.
+    layout.setNarrow(false)
+    layout.openDetails()
+    expect(layout.getSnapshot()).toMatchObject({ narrow: false, details: 360 })
   })
 
   it('lets the rail re-expand without losing its wide preference on narrow windows', () => {

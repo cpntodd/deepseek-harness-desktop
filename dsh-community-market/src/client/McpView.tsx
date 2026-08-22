@@ -133,9 +133,9 @@ export function McpView(props: {
             flex: 1,
             padding: '8px 12px',
             borderRadius: '8px',
-            border: '1px solid var(--dsw-alias-border)',
-            background: 'var(--dsw-alias-input-bg)',
-            color: 'var(--dsw-alias-text)',
+            border: '1px solid var(--dsw-alias-border-l2)',
+            background: 'var(--dsw-alias-bg-layer-1)',
+            color: 'var(--dsw-alias-label-primary)',
           }}
           value={search}
           placeholder={t('mcpSearch')}
@@ -148,8 +148,8 @@ export function McpView(props: {
             padding: '8px 14px',
             borderRadius: '8px',
             border: 'none',
-            background: 'var(--dsw-alias-primary)',
-            color: 'var(--dsw-alias-on-primary)',
+            background: 'var(--dsw-alias-button-primary-fill)',
+            color: 'var(--dsw-alias-label-primary-foreground)',
           }}
           onClick={() => { void load() }}
         >
@@ -158,7 +158,7 @@ export function McpView(props: {
       </div>
 
       {error !== undefined && (
-        <div style={{ color: 'var(--dsw-alias-error)', fontSize: '13px' }} role="alert">{error}</div>
+        <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontSize: '13px' }} role="alert">{error}</div>
       )}
       {loading && <div style={{ fontSize: '13px', opacity: 0.7 }}>{t('mcpLoading')}</div>}
 
@@ -178,8 +178,8 @@ export function McpView(props: {
                 gap: '6px',
                 padding: '12px',
                 borderRadius: '10px',
-                border: '1px solid var(--dsw-alias-border)',
-                background: 'var(--dsw-alias-surface)',
+                border: '1px solid var(--dsw-alias-border-l2)',
+                background: 'var(--dsw-alias-bg-layer-3)',
               }}
             >
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -210,7 +210,7 @@ export function McpView(props: {
                       </span>
                       <button
                         type="button"
-                        style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-surface-raised)' }}
+                        style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-interactive-bg-hover-solid)' }}
                         disabled={busy}
                         onClick={() => { void toggle(installation) }}
                       >
@@ -218,7 +218,7 @@ export function McpView(props: {
                       </button>
                       <button
                         type="button"
-                        style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-error)' }}
+                        style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-label-primary-foreground)' }}
                         disabled={busy}
                         onClick={() => { void remove(installation) }}
                       >
@@ -228,7 +228,7 @@ export function McpView(props: {
                   ) : (
                     <button
                       type="button"
-                      style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-primary)', color: 'var(--dsw-alias-on-primary)' }}
+                      style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-foreground)' }}
                       disabled={busy}
                       onClick={() => { void install(server) }}
                     >
@@ -253,7 +253,8 @@ export function McpView(props: {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(0,0,0,0.4)',
+            background: 'var(--dsw-alias-bg-mask-1)',
+            backdropFilter: 'var(--dsw-mask-blur)',
             zIndex: 10,
           }}
         >
@@ -264,8 +265,8 @@ export function McpView(props: {
               gap: '12px',
               padding: '20px',
               borderRadius: '12px',
-              background: 'var(--dsw-alias-surface)',
-              border: '1px solid var(--dsw-alias-border)',
+              background: 'var(--dsw-alias-bg-layer-2)',
+              border: '1px solid var(--dsw-alias-border-l2)',
               maxWidth: '420px',
             }}
             role="dialog"
@@ -287,7 +288,7 @@ export function McpView(props: {
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 type="button"
-                style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-surface-raised)' }}
+                style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-interactive-bg-hover-solid)' }}
                 disabled={busy}
                 onClick={() => setPreview(undefined)}
               >
@@ -295,7 +296,7 @@ export function McpView(props: {
               </button>
               <button
                 type="button"
-                style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-primary)', color: 'var(--dsw-alias-on-primary)' }}
+                style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-foreground)' }}
                 disabled={busy}
                 onClick={() => { void confirmInstall() }}
               >

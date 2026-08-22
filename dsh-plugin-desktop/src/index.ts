@@ -41,6 +41,8 @@ import {
   handleDesktopTerminalOpenRequest,
 } from './desktop-settings-route.ts'
 import type {} from './desktop-settings-controller.ts'
+import { DESKTOP_STATUS_LSP_PROVIDERS_PATH } from './desktop-status-contract.ts'
+import { handleDesktopLspProvidersRequest } from './desktop-status-route.ts'
 import { desktopBootRecoveryInjections } from './desktop-boot-recovery.ts'
 import type { DesktopShellMode } from './runtime.ts'
 import type {} from './runtime.ts'
@@ -189,6 +191,14 @@ export function apply(ctx: Context, config: Config): void {
       )
     }
   }
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: DESKTOP_STATUS_LSP_PROVIDERS_PATH,
+      handler: (req, res) => handleDesktopLspProvidersRequest(req, res, rendererOrigin, ctx),
+    }),
+    'dsh-plugin-desktop: private LSP-provider status route',
+  )
   ctx.effect(
     () => ctx.webServer.register({
       kind: 'exact',

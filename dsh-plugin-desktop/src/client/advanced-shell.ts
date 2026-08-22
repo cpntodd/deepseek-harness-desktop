@@ -3,9 +3,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from './contracts.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
 import { AdvancedFrame } from './AdvancedFrame.tsx'
+import { AgentStatusPanel } from './AgentStatusPanel.tsx'
 import { DesktopLayoutState } from './layout-state.ts'
 import { provideDesktopLayout } from './layout-service.ts'
 import { installAdvancedStyles } from './styles.ts'
+import { en, zh } from './desktop-status-locales.ts'
+import { installDesktopStatusStyles } from './desktop-status-styles.ts'
 import { DesktopThemePresenter } from './theme-presenter.ts'
 
 /**
@@ -53,6 +56,28 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
       'details': { kind: 'single', scope: 'session' },
       'shell.overlay': { kind: 'list', scope: 'root' },
     },
-    inject: () => ({ layout: desktopLayout, platform: environment.platform }),
+    inject: () => ({
+      layout: desktopLayout,
+      platform: environment.platform,
+      statusT: ctx.locale.bind('desktop.status'),
+    }),
   }, AdvancedFrame), 'desktop: advanced root slot')
+
+  // The desktop owns the right details surface in advanced mode: an agent
+  // status panel (MCP + LSP + Todo). It registers at a lower priority than the
+  // upstream tool-call inspector so it shadows that occupant (slot shadowing).
+  ctx.effect(
+    () => ctx.locale.register('desktop.status', { en, zh }),
+    'desktop: status dictionaries',
+  )
+  ctx.effect(
+    () => installDesktopStatusStyles(),
+    'desktop: status styles',
+  )
+  ctx.slots.inject('details', () => ctx.slots.register({
+    name: 'details',
+    priority: -1,
+    locale: 'desktop.status',
+    inject: () => ({ closeDetails: () => { desktopLayout.closeDetails() } }),
+  }, AgentStatusPanel))
 }

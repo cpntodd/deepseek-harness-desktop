@@ -8,6 +8,8 @@ export interface DesktopLayoutSnapshot {
   narrow: boolean
   /** Manual narrow-screen override that temporarily expands the rail. */
   narrowExpanded: boolean
+  /** Manual narrow-screen override that temporarily reopens the status panel. */
+  detailsExpanded: boolean
 }
 
 /** Column geometry after preserving the center surface. */
@@ -66,9 +68,10 @@ function clamp(value: number, min: number, max: number): number {
 export class DesktopLayoutState {
   private snapshot: DesktopLayoutSnapshot = Object.freeze({
     sidebar: SIDEBAR_DEFAULT,
-    details: 0,
+    details: DETAILS_DEFAULT,
     narrow: false,
     narrowExpanded: false,
+    detailsExpanded: false,
   })
   private readonly listeners = new Set<() => void>()
 
@@ -95,17 +98,42 @@ export class DesktopLayoutState {
   /** @param narrow - whether the frame is below the automatic-collapse breakpoint. */
   setNarrow(narrow: boolean): void {
     if (this.snapshot.narrow === narrow) return
-    this.publish({ ...this.snapshot, narrow, narrowExpanded: false })
+    this.publish({ ...this.snapshot, narrow, narrowExpanded: false, detailsExpanded: false })
   }
 
-  /** Open details at its default width. */
+  /** Open details; on a narrow frame this reopens the status panel override. */
   openDetails(): void {
+    if (this.snapshot.narrow) {
+      if (!this.snapshot.detailsExpanded) {
+        this.publish({ ...this.snapshot, detailsExpanded: true })
+      }
+      return
+    }
     if (this.snapshot.details === 0) this.publish({ ...this.snapshot, details: DETAILS_DEFAULT })
   }
 
-  /** Close details while keeping its slot mounted. */
+  /** Close details; on a narrow frame this collapses the status panel override. */
   closeDetails(): void {
+    if (this.snapshot.narrow) {
+      if (this.snapshot.detailsExpanded) {
+        this.publish({ ...this.snapshot, detailsExpanded: false })
+      }
+      return
+    }
     if (this.snapshot.details !== 0) this.publish({ ...this.snapshot, details: 0 })
+  }
+
+  /** Toggle the status panel: reopen if hidden, close if visible. */
+  toggleDetails(): void {
+    if (this.snapshot.narrow) {
+      this.publish({ ...this.snapshot, detailsExpanded: !this.snapshot.detailsExpanded })
+      return
+    }
+    if (this.snapshot.details === 0) {
+      this.publish({ ...this.snapshot, details: DETAILS_DEFAULT })
+    } else {
+      this.publish({ ...this.snapshot, details: 0 })
+    }
   }
 
   /** @param width - requested sidebar width from a resize gesture. */

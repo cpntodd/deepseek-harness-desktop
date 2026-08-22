@@ -16,7 +16,7 @@ const MAX_SETTINGS_BODY_BYTES = 16 * 1024
 
 class BodyTooLargeError extends Error {}
 
-function finishJson(
+export function finishJson(
   res: ServerResponse,
   statusCode: number,
   value: object,
@@ -85,7 +85,7 @@ function referrerOrigin(value: string | undefined): string | undefined {
  * use the standard same-origin fetch metadata plus its same-origin referrer,
  * because browsers commonly omit Origin on same-origin GET requests.
  */
-function isSameOriginLoopbackRequest(
+export function isSameOriginLoopbackRequest(
   req: IncomingMessage,
   expectedOrigin: string,
   mutating: boolean,
