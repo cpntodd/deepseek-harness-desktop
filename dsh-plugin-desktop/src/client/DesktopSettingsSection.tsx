@@ -15,6 +15,7 @@ import type { DesktopClientPlatform } from './environment.ts'
 export interface DesktopShellSettings {
   readonly mode: 'compatibility' | 'advanced'
   readonly port: number
+  readonly permissionPreset: 'read-only' | 'workspace-write' | 'danger-full-access'
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
 
@@ -43,7 +44,7 @@ export type DesktopSettingsSectionProps =
   & InjectFace<DesktopSettingsSectionInjected>
 
 type Translate = DesktopSettingsSectionProps['t']
-type BusyOperation = 'load' | 'create-profile' | 'select-profile' | 'delete-profile' | 'select-market' | 'mode' | 'notification'
+type BusyOperation = 'load' | 'create-profile' | 'select-profile' | 'delete-profile' | 'select-market' | 'mode' | 'permission' | 'notification'
 type RestartState = 'none' | 'restarting' | 'required'
 
 function useScope<T>(scope: SettingsScope<T>) {
@@ -290,6 +291,13 @@ export function DesktopSettingsSection({
     })
   }
 
+  const setPermissionPreset = (next: DesktopShellSettings['permissionPreset']): void => {
+    void run('permission', async () => {
+      await desktopSettings.set('permissionPreset', next)
+      requestRestart()
+    })
+  }
+
   const setNotification = (field: keyof DesktopNotificationSettings, checked: boolean): void => {
     void run('notification', async () => { await notificationSettings.set(field, checked) })
   }
@@ -452,6 +460,18 @@ export function DesktopSettingsSection({
             action={() => { setMode('advanced') }}
             status={mode === 'advanced' ? t('selected') : undefined}
           />
+        </div>
+      </section>
+
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-permission-title">
+        <div>
+          <h3 id="dsh-desktop-permission-title">{t('permissionPresetTitle')}</h3>
+          <p className="dshDesktopSettingsGroupIntro">{t('permissionPresetIntro')}</p>
+        </div>
+        <div className="dshDesktopSettingsList" role="radiogroup" aria-labelledby="dsh-desktop-permission-title">
+          <Choice title={t('permissionReadOnly')} body={t('permissionReadOnlyBody')} selected={desktop.value?.permissionPreset === 'read-only'} disabled={!settingsWritable || busy !== undefined || restart !== 'none'} action={() => { setPermissionPreset('read-only') }} status={desktop.value?.permissionPreset === 'read-only' ? t('selected') : undefined} />
+          <Choice title={t('permissionWorkspaceWrite')} body={t('permissionWorkspaceWriteBody')} selected={desktop.value?.permissionPreset === 'workspace-write'} disabled={!settingsWritable || busy !== undefined || restart !== 'none'} action={() => { setPermissionPreset('workspace-write') }} status={desktop.value?.permissionPreset === 'workspace-write' ? t('selected') : undefined} />
+          <Choice title={t('permissionFullAccess')} body={t('permissionFullAccessBody')} selected={desktop.value?.permissionPreset === 'danger-full-access'} disabled={!settingsWritable || busy !== undefined || restart !== 'none'} action={() => { setPermissionPreset('danger-full-access') }} status={desktop.value?.permissionPreset === 'danger-full-access' ? t('selected') : undefined} />
         </div>
       </section>
 

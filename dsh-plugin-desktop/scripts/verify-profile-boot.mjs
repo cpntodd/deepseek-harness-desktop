@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { boot } from '@deepseek-ai/dsh-app-boot'
+import { boot, composeEntries } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import {
   createLaunchEnvironmentSnapshot,
@@ -31,11 +31,17 @@ try {
   writeFileSync(join(home, 'settings.yaml'), [
     'dsh-desktop:',
     '  mode: advanced',
+    '  permissionPreset: danger-full-access',
     'agent-presets:',
     '  default: minimal',
     '',
   ].join('\n'))
   const prepared = prepareDesktopProfile('1', home, 'win32')
+  if (prepared.permissionPreset !== 'danger-full-access') throw new Error('profile smoke did not read the danger-full-access preset')
+  const composedPolicyRows = composeEntries([prepared.patches])
+  if (composedPolicyRows.find(row => row.id === 'sandbox-policy')?.config?.mode !== 'danger-full-access') throw new Error('profile smoke composed the wrong sandbox policy')
+  if (composedPolicyRows.find(row => row.id === 'approval')?.config?.policy !== 'never') throw new Error('profile smoke composed the wrong approval policy')
+  if (composedPolicyRows.find(row => row.id === 'permission')?.config?.defaultPreset !== 'danger-full-access') throw new Error('profile smoke composed the wrong permission preset')
   const hostServicePluginDir = join(
     prepared.profile.dir,
     'node_modules',

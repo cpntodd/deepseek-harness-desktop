@@ -80,6 +80,12 @@ const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
 const UI_CONVERSATION_PACKAGE = '@deepseek-ai/dsh-client-ui-conversation'
+const SANDBOX_POLICY_ROW_ID = 'sandbox-policy'
+const UPSTREAM_SANDBOX_POLICY_PACKAGE = '@deepseek-ai/dsh-sandbox-policy'
+const APPROVAL_ROW_ID = 'approval'
+const UPSTREAM_APPROVAL_PACKAGE = '@deepseek-ai/dsh-user-approval'
+const PERMISSION_ROW_ID = 'permission'
+const UPSTREAM_PERMISSION_PACKAGE = '@deepseek-ai/dsh-permission-presets'
 const DEFAULT_DESKTOP_MARKET_SNAPSHOT: DesktopMarketSnapshot = Object.freeze({
   requested: 'disabled',
   effective: 'disabled',
@@ -105,6 +111,43 @@ export function parseDesktopShellMode(value: unknown): DesktopShellMode {
   throw new Error(`${BIN_NAME}: ${DESKTOP_SETTINGS_NAMESPACE}.mode must be "compatibility" or "advanced"`)
 }
 
+/** Supported Desktop permission presets. */
+export const DESKTOP_PERMISSION_PRESETS = ['read-only', 'workspace-write', 'danger-full-access'] as const
+
+/** Persisted Desktop permission preset type. */
+export type DesktopPermissionPreset = typeof DESKTOP_PERMISSION_PRESETS[number]
+
+/** Default permission preset for new Desktop generations. */
+export const DEFAULT_DESKTOP_PERMISSION_PRESET: DesktopPermissionPreset = 'workspace-write'
+
+/** Parse a persisted Desktop permission preset and reject corrupted values. */
+export function parseDesktopPermissionPreset(value: unknown): DesktopPermissionPreset {
+  if (value === undefined) return DEFAULT_DESKTOP_PERMISSION_PRESET
+  if (value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access') return value
+  throw new Error(`${BIN_NAME}: ${DESKTOP_SETTINGS_NAMESPACE}.permissionPreset must be "read-only", "workspace-write", or "danger-full-access"`)
+}
+
+/** Return the single policy matrix projected into the upstream permission rows. */
+export function desktopPermissionConfig(preset: DesktopPermissionPreset): {
+  sandboxMode: DesktopPermissionPreset
+  approvalPolicy: 'ask' | 'never'
+  permissionConfig: Record<string, unknown>
+} {
+  const approvalPolicy = preset === 'danger-full-access' ? 'never' : 'ask'
+  return {
+    sandboxMode: preset,
+    approvalPolicy,
+    permissionConfig: {
+      defaultPreset: preset,
+      presets: {
+        'read-only': { sandbox: 'read-only', approval: 'ask', name: 'read-only', description: 'Reads only.' },
+        'workspace-write': { sandbox: 'workspace-write', approval: 'ask', name: 'workspace-write', description: 'Write inside the workspace and permitted temporary directories; wider retries require approval.' },
+        'danger-full-access': { sandbox: 'danger-full-access', approval: 'never', name: 'danger-full-access', description: 'Full file access without approval prompts.' },
+      },
+    },
+  }
+}
+
 /** Parse the requested loopback Web port and reject values Node cannot listen on. */
 export function parseDesktopPort(value: unknown): number {
   if (value === undefined) return DEFAULT_DESKTOP_PORT
@@ -116,6 +159,7 @@ export function parseDesktopPort(value: unknown): number {
 export interface DesktopStartupSettings {
   mode: DesktopShellMode
   port: number
+  permissionPreset: DesktopPermissionPreset
 }
 
 /**
@@ -129,7 +173,7 @@ export function desktopStartupSettingsFromSettings(document: unknown): DesktopSt
   }
   const section = (document as Record<string, unknown>)[DESKTOP_SETTINGS_NAMESPACE]
   if (section === undefined) {
-    return { mode: DEFAULT_DESKTOP_SHELL_MODE, port: DEFAULT_DESKTOP_PORT }
+    return { mode: DEFAULT_DESKTOP_SHELL_MODE, port: DEFAULT_DESKTOP_PORT, permissionPreset: DEFAULT_DESKTOP_PERMISSION_PRESET }
   }
   if (typeof section !== 'object' || section === null || Array.isArray(section)) {
     throw new Error(`${BIN_NAME}: ${DESKTOP_SETTINGS_NAMESPACE} settings must be a map`)
@@ -138,12 +182,18 @@ export function desktopStartupSettingsFromSettings(document: unknown): DesktopSt
   return {
     mode: parseDesktopShellMode(values.mode),
     port: parseDesktopPort(values.port),
+    permissionPreset: parseDesktopPermissionPreset(values.permissionPreset),
   }
 }
 
 /** Read only the shell mode from one parsed settings document. */
 export function desktopShellModeFromSettings(document: unknown): DesktopShellMode {
   return desktopStartupSettingsFromSettings(document).mode
+}
+
+/** Read only the permission preset from one parsed settings document. */
+export function desktopPermissionPresetFromSettings(document: unknown): DesktopPermissionPreset {
+  return desktopStartupSettingsFromSettings(document).permissionPreset
 }
 
 /**
@@ -158,7 +208,7 @@ export function readDesktopStartupSettings(config: SettingsFileConfig): DesktopS
     text = readFileSync(spec.filename, 'utf8')
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { mode: DEFAULT_DESKTOP_SHELL_MODE, port: DEFAULT_DESKTOP_PORT }
+      return { mode: DEFAULT_DESKTOP_SHELL_MODE, port: DEFAULT_DESKTOP_PORT, permissionPreset: DEFAULT_DESKTOP_PERMISSION_PRESET }
     }
     throw cause
   }
@@ -207,6 +257,8 @@ export interface PreparedDesktopProfile {
   mode: DesktopShellMode
   /** Persisted loopback Web port applied to every startup consumer. */
   port: number
+  /** Persisted permission preset applied to the startup policy rows. */
+  permissionPreset: DesktopPermissionPreset
   /** Requested provider and the fail-closed provider effective for this generation. */
   market: DesktopMarketSnapshot
   /** Internal boot diagnostic when the requested provider was disabled. */
@@ -729,7 +781,7 @@ export function prepareDesktopProfile(
   const composedRows = composeEntries([patches])
   assertUniqueEntryIds(composedRows)
   assertEffectiveMarketRows(composedRows, effectiveMarket)
-  const rows = new Map<string, EntryOptions>()
+  let rows = new Map<string, EntryOptions>()
   for (const row of composedRows) {
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
@@ -742,11 +794,35 @@ export function prepareDesktopProfile(
     ...rowConfig(settings),
   } as SettingsFileConfig)
   hooks.onSettingsDocumentResolved?.(resolveSettingsFileSpec(settingsConfig).filename)
-  const { mode, port } = readDesktopStartupSettings(settingsConfig)
+  const { mode, port, permissionPreset } = readDesktopStartupSettings(settingsConfig)
   patches.push({
     id: 'settings',
     config: settingsConfig,
   })
+  const sandboxPolicy = rows.get(SANDBOX_POLICY_ROW_ID)
+  if (sandboxPolicy?.name !== UPSTREAM_SANDBOX_POLICY_PACKAGE) {
+    throw new Error(`${BIN_NAME}: desktop profile must use ${UPSTREAM_SANDBOX_POLICY_PACKAGE} in the ${SANDBOX_POLICY_ROW_ID} row`)
+  }
+  const approval = rows.get(APPROVAL_ROW_ID)
+  if (approval?.name !== UPSTREAM_APPROVAL_PACKAGE) {
+    throw new Error(`${BIN_NAME}: desktop profile must use ${UPSTREAM_APPROVAL_PACKAGE} in the ${APPROVAL_ROW_ID} row`)
+  }
+  const permission = rows.get(PERMISSION_ROW_ID)
+  if (permission?.name !== UPSTREAM_PERMISSION_PACKAGE) {
+    throw new Error(`${BIN_NAME}: desktop profile must use ${UPSTREAM_PERMISSION_PACKAGE} in the ${PERMISSION_ROW_ID} row`)
+  }
+  const { sandboxMode, approvalPolicy, permissionConfig } = desktopPermissionConfig(permissionPreset)
+  patches.push(
+    { id: SANDBOX_POLICY_ROW_ID, config: { ...rowConfig(sandboxPolicy), mode: sandboxMode } },
+    { id: APPROVAL_ROW_ID, config: { ...rowConfig(approval), policy: approvalPolicy } },
+    { id: PERMISSION_ROW_ID, config: { ...rowConfig(permission), ...permissionConfig } },
+  )
+  const finalComposedRows = composeEntries([patches])
+  assertUniqueEntryIds(finalComposedRows)
+  rows = new Map<string, EntryOptions>()
+  for (const row of finalComposedRows) {
+    if (typeof row.id === 'string') rows.set(row.id, row)
+  }
   if (mode === 'advanced') {
     for (const [id, packageName] of [
       ['ui-layout', UI_LAYOUT_PACKAGE],
@@ -886,6 +962,7 @@ export function prepareDesktopProfile(
     skippedOptionalEntries,
     mode,
     port,
+    permissionPreset,
     market: desktopMarketSnapshotWithEffective(marketSelection, effectiveMarket),
     ...(marketFailure === undefined ? {} : { marketFailure }),
   }

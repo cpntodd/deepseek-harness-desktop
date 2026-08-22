@@ -75,6 +75,8 @@ export interface DesktopSettings {
   mode: DesktopShellMode
   /** Loopback Web port selected for the next application generation; zero requests a random port. */
   port: number
+  /** Permission preset projected into the startup sandbox/approval policy rows. */
+  permissionPreset: 'read-only' | 'workspace-write' | 'danger-full-access'
   /** Log verbosity threshold applied to the file logger. */
   logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
@@ -83,6 +85,7 @@ export interface DesktopSettings {
 export const DesktopSettingsSchema: z<DesktopSettings> = z.object({
   mode: z.union(['compatibility', 'advanced'] as const).default('compatibility'),
   port: z.number().step(1).min(0).max(65_535).default(DESKTOP_DEFAULT_WEB_PORT),
+  permissionPreset: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('workspace-write'),
   logLevel: z.union(['debug', 'info', 'warn', 'error'] as const).default('info'),
 })
 
@@ -165,6 +168,8 @@ export function apply(ctx: Context, config: Config): void {
     DesktopSettingsSchema,
     { applies: 'restart' },
   )
+  let activePermissionPreset = (ctx.settings.get(DESKTOP_SETTINGS_NAMESPACE) as DesktopSettings | undefined)?.permissionPreset
+    ?? 'workspace-write'
   const rendererOrigin = `http://127.0.0.1:${String(ctx.webServer.port)}`
   ctx.on('webserver/index-inject', table => {
     table.push(...desktopBootRecoveryInjections())
@@ -262,11 +267,12 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => {
     let pending: ReturnType<typeof setImmediate> | undefined
     const stopWatching = settings.watch((next) => {
-      if (next.mode === config.mode && next.port === config.port) {
+      if (next.mode === config.mode && next.port === config.port && next.permissionPreset === activePermissionPreset) {
         if (pending !== undefined) clearImmediate(pending)
         pending = undefined
         return
       }
+      activePermissionPreset = next.permissionPreset
       pending ??= setImmediate(() => {
         pending = undefined
         void runtime.requestRestart().catch((cause: unknown) => {

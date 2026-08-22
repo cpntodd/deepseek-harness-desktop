@@ -6,11 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { composeEntries, initProfile, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-app-boot'
 import {
   DESKTOP_PACKAGE_NAME,
+  DEFAULT_DESKTOP_PERMISSION_PRESET,
+  desktopPermissionConfig,
+  desktopPermissionPresetFromSettings,
   desktopShellModeFromSettings,
   desktopStartupSettingsFromSettings,
   desktopBundleList,
   ensureDesktopProfile,
   prepareDesktopProfile,
+  parseDesktopPermissionPreset,
   readDesktopShellMode,
   shippedPresetRoot,
   validateDshMarketBundlePatches,
@@ -555,6 +559,7 @@ describe('desktop profile composition', {
 
     expect(prepared.mode).toBe('advanced')
     expect(prepared.port).toBe(43_189)
+    expect(prepared.permissionPreset).toBe(DEFAULT_DESKTOP_PERMISSION_PRESET)
     expect(rows.find(row => row.id === 'desktop-shell')).toEqual(expect.objectContaining({
       disabled: false,
       config: expect.objectContaining({ mode: 'advanced', port: 43_189 }),
@@ -584,15 +589,59 @@ describe('desktop profile composition', {
     expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { mode: 'advanced', port: 43_189 } })).toEqual({
       mode: 'advanced',
       port: 43_189,
+      permissionPreset: 'workspace-write',
     })
     expect(desktopStartupSettingsFromSettings({ 'dsh-desktop': { mode: 'advanced' } })).toEqual({
       mode: 'advanced',
       port: 43_120,
+      permissionPreset: 'workspace-write',
     })
+    expect(desktopPermissionPresetFromSettings({ 'dsh-desktop': { permissionPreset: 'read-only' } })).toBe('read-only')
     expect(desktopShellModeFromSettings({ unrelated: { enabled: true } })).toBe('compatibility')
   })
 
+  it.each([
+    ['read-only', 'read-only', 'ask'],
+    ['workspace-write', 'workspace-write', 'ask'],
+    ['danger-full-access', 'danger-full-access', 'never'],
+  ] as const)('projects the %s permission preset into final policy rows', (preset, expectedMode, expectedApproval) => {
+    const home = temporaryHome()
+    writeFileSync(join(home, 'settings.yaml'), `dsh-desktop:\n  permissionPreset: ${preset}\n`)
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([prepared.patches])
+    const sandbox = rows.find(row => row.id === 'sandbox-policy')
+    const permission = rows.find(row => row.id === 'permission')
+    expect(sandbox?.config).toEqual(expect.objectContaining({
+      mode: expectedMode,
+      workspaceRoot: { __jsExpr: 'process.cwd()' },
+    }))
+    expect(rows.find(row => row.id === 'approval')?.config?.policy).toBe(expectedApproval)
+    expect(permission?.config?.defaultPreset).toBe(preset)
+    expect(permission?.config?.presets).toEqual(desktopPermissionConfig(preset).permissionConfig.presets)
+    expect(prepared.permissionPreset).toBe(preset)
+  })
+
+  it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)('applies the %s permission choice after home policy patches', preset => {
+    const home = temporaryHome()
+    writeFileSync(join(home, 'settings.yaml'), `dsh-desktop:\n  permissionPreset: ${preset}\n`)
+    writeFileSync(join(home, 'cordis.patch.yml'), [
+      '- id: sandbox-policy', "  name: '@deepseek-ai/dsh-sandbox-policy'", '  config:', '    mode: read-only',
+      '- id: approval', "  name: '@deepseek-ai/dsh-user-approval'", '  config:', '    policy: never',
+      '- id: permission', "  name: '@deepseek-ai/dsh-permission-presets'", '  config:', '    defaultPreset: read-only',
+      '',
+    ].join('\n'))
+    const rows = composeEntries([prepareDesktopProfile(undefined, home, 'darwin').patches])
+    expect(rows.find(row => row.id === 'sandbox-policy')?.config?.mode).toBe(preset)
+    expect(rows.find(row => row.id === 'approval')?.config?.policy).toBe(preset === 'danger-full-access' ? 'never' : 'ask')
+    expect(rows.find(row => row.id === 'permission')?.config?.defaultPreset).toBe(preset)
+  })
+
   it('rejects invalid settings roots, sections, modes, and YAML', () => {
+    expect(parseDesktopPermissionPreset(undefined)).toBe('workspace-write')
+    for (const preset of ['read-only', 'workspace-write', 'danger-full-access']) expect(parseDesktopPermissionPreset(preset)).toBe(preset)
+    for (const value of ['full-access', 42, true]) {
+      expect(() => parseDesktopPermissionPreset(value)).toThrow('permissionPreset must be')
+    }
     expect(() => desktopShellModeFromSettings([])).toThrow('must be a map')
     expect(() => desktopShellModeFromSettings({ 'dsh-desktop': true })).toThrow('settings must be a map')
     expect(() => desktopShellModeFromSettings({ 'dsh-desktop': { mode: 'glass' } })).toThrow(

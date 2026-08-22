@@ -38,3 +38,32 @@
 # providers.
 - id: ui-settings-models
   disabled: true
+
+# The desktop owns the permission policy. The upstream base bundle derives the
+# sandbox-policy, approval, and permission rows from DSH_PERMISSION_MODE, which
+# the desktop never sets; replacing those rows here removes the upstream
+# policy so no env-derived default can leak into the desktop generation. The
+# launcher then projects the persisted Desktop permission preset
+# (dsh-desktop.permissionPreset) onto these rows at generation time, so Read
+# Only, Workspace Write, and Full Access are enforced by the sandbox/approval
+# services the desktop composes.
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js process.cwd()
+- id: approval
+  config:
+    policy: ask
+- id: permission
+  config:
+    defaultPreset: workspace-write
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never

@@ -32,6 +32,8 @@ const config: DesktopConfig = {
   minHeight: 640,
 }
 
+const permissionPreset = 'workspace-write' as const
+
 afterEach(() => { vi.useRealTimers() })
 
 interface PluginHarness {
@@ -162,7 +164,7 @@ describe('desktop Host plugin', () => {
   it('defaults to compatibility mode and validates both schemas', () => {
     expect(Config({} as DesktopConfig)).toEqual(config)
     expect(Config({ mode: 'advanced' } as DesktopConfig)).toEqual({ ...config, mode: 'advanced' })
-    expect(DesktopSettingsSchema({} as DesktopSettings)).toEqual({ mode: 'compatibility', port: 43_120, logLevel: 'info' })
+    expect(DesktopSettingsSchema({} as DesktopSettings)).toEqual({ mode: 'compatibility', port: 43_120, permissionPreset, logLevel: 'info' })
     expect(() => DesktopSettingsSchema({ port: -1 } as DesktopSettings)).toThrow()
     expect(() => DesktopSettingsSchema({ port: 1.5 } as DesktopSettings)).toThrow()
     expect(() => DesktopSettingsSchema({ port: 65_536 } as DesktopSettings)).toThrow()
@@ -332,15 +334,15 @@ describe('desktop Host plugin', () => {
     apply(harness.ctx, config)
 
     await harness.notify(
-      { mode: 'compatibility', port: 0, logLevel: 'info' },
-      { mode: 'compatibility', port: 0, logLevel: 'info' },
+      { mode: 'compatibility', port: 0, permissionPreset, logLevel: 'info' },
+      { mode: 'compatibility', port: 0, permissionPreset, logLevel: 'info' },
     )
     expect(harness.restart).not.toHaveBeenCalled()
 
     harness.restart.mockImplementation(() => new Promise<void>(() => {}))
     await harness.notify(
-      { mode: 'advanced', port: 0, logLevel: 'info' },
-      { mode: 'compatibility', port: 0, logLevel: 'info' },
+      { mode: 'advanced', port: 0, permissionPreset, logLevel: 'info' },
+      { mode: 'compatibility', port: 0, permissionPreset, logLevel: 'info' },
     )
     await vi.runAllTimersAsync()
     expect(harness.restart).toHaveBeenCalledOnce()
@@ -352,15 +354,15 @@ describe('desktop Host plugin', () => {
     apply(harness.ctx, config)
 
     await harness.notify(
-      { mode: 'compatibility', port: 0, logLevel: 'debug' },
-      { mode: 'compatibility', port: 0, logLevel: 'info' },
+      { mode: 'compatibility', port: 0, permissionPreset, logLevel: 'debug' },
+      { mode: 'compatibility', port: 0, permissionPreset, logLevel: 'info' },
     )
     expect(harness.restart).not.toHaveBeenCalled()
 
     harness.restart.mockImplementation(() => new Promise<void>(() => {}))
     await harness.notify(
-      { mode: 'compatibility', port: 43_189, logLevel: 'debug' },
-      { mode: 'compatibility', port: 0, logLevel: 'debug' },
+      { mode: 'compatibility', port: 43_189, permissionPreset, logLevel: 'debug' },
+      { mode: 'compatibility', port: 0, permissionPreset, logLevel: 'debug' },
     )
     await vi.runAllTimersAsync()
     expect(harness.restart).toHaveBeenCalledOnce()
