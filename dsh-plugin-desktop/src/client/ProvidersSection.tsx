@@ -94,9 +94,10 @@ export const SUBSCRIPTION_PROVIDER_IDS: readonly string[] = ['codex', 'claude', 
 /**
  * Join the provider directory with the resolved credential references and
  * their configured state, deriving the reference each profile resolves keys
- * through (its `apiKeyEnv`, or the conventional `<ROUTE>_API_KEY`). Only
- * configured, non-subscription providers are listed: subscription providers
- * are handled by the OAuth cards, never as API keys. Directory routes whose
+ * through (its `apiKeyEnv`, or the conventional `<ROUTE>_API_KEY`). Every
+ * non-subscription provider is listed so a user can find and configure a
+ * provider before its credential exists. Subscription providers are handled
+ * by the OAuth cards, never as API keys. Directory routes whose
  * display names differ only by case for the same service (e.g.
  * `deepseek-official` "DeepSeek" vs the pi-ai catalog `deepseek` "deepseek")
  * are deduplicated case-insensitively on the display name, keeping the first
@@ -125,7 +126,6 @@ export function buildProviderRows(
         ?? deriveKeyRef(entry.provider)
       return { provider: entry, ref, configured: credentials[ref]?.configured === true }
     })
-    .filter(row => row.configured)
 }
 
 /**
@@ -218,6 +218,7 @@ export function ProvidersSection(props: ProvidersSectionProps) {
   const [addDisplayName, setAddDisplayName] = useState('')
   const [addKey, setAddKey] = useState('')
   const [addError, setAddError] = useState<string | undefined>(undefined)
+  const [search, setSearch] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
     if (api === undefined) return
@@ -325,11 +326,24 @@ export function ProvidersSection(props: ProvidersSectionProps) {
   }, [api, addRoute, addDisplayName, addKey, rows, t, load])
 
   const sortedRows = sortProviderRowsByName(rows)
+  const normalizedSearch = search.trim().toLowerCase()
+  const visibleRows = normalizedSearch.length === 0
+    ? sortedRows
+    : sortedRows.filter(row => `${row.provider.displayName} ${row.provider.provider}`.toLowerCase().includes(normalizedSearch))
 
   return (
     <div style={styles.section}>
       <h2 style={styles.title}>{t('title')}</h2>
       <p style={styles.intro}>{t('intro')}</p>
+      {rows.length > 0 && (
+        <input
+          style={styles.input}
+          value={search}
+          aria-label={t('searchLabel')}
+          placeholder={t('searchPlaceholder')}
+          onChange={event => setSearch(event.target.value)}
+        />
+      )}
 
       {error !== undefined && (
         <p style={styles.error} role="alert">{error}</p>
@@ -363,7 +377,7 @@ export function ProvidersSection(props: ProvidersSectionProps) {
             />
           </li>
         ))}
-        {sortedRows.map((row) => {
+        {visibleRows.map((row) => {
           const draft = drafts[row.provider.provider] ?? ''
           const busy = saving[row.provider.provider] === true
           return (

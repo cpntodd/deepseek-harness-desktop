@@ -130,8 +130,9 @@ describe('provider key helpers', () => {
 
     const rows = buildProviderRows(providers, namespaces, credentials)
 
-    expect(rows.map(row => row.provider.provider)).toEqual(['deepseek-official', 'anthropic'])
-    expect(rows.every(row => row.configured)).toBe(true)
+    expect(rows.map(row => row.provider.provider)).toEqual(['deepseek-official', 'anthropic', 'openai'])
+    expect(rows).toHaveLength(3)
+    expect(rows.filter(row => row.configured).map(row => row.provider.provider)).toEqual(['deepseek-official', 'anthropic'])
   })
 
   it('buildProviderRows excludes subscription providers even when configured', () => {
