@@ -50,7 +50,7 @@ Do not set sandbox_permissions or justification on ordinary tool calls (bash, fi
 
 Only after a call is DENIED with a [sandbox: ...] marker may you retry the exact same operation once, setting sandbox_permissions to the narrowest strictly-wider mode (workspace-write is wider than read-only; danger-full-access is wider than workspace-write) and justification to one sentence stating why the escalation is needed.
 
-Never set sandbox_permissions equal to the current mode: that is not an escalation and is rejected. In particular, when the current policy is danger-full-access, do not send sandbox_permissions or justification at all; the operation already has full access.
+Never set sandbox_permissions equal to the current mode: that is not an escalation; the desktop strips it and the call runs at the current mode. In particular, when the current policy is danger-full-access, do not send sandbox_permissions or justification at all; the operation already has full access.
 
 Approval prompts may be disabled. When the session says approval prompts are disabled or actions requiring approval are rejected automatically, do not request or retry sandbox escalation; the denial is final and the tool call must remain ordinary.
 

@@ -135,6 +135,13 @@ try {
       host.provide('webRuntime', {})
       host.provide('appExit', () => {})
       host.provide('settings', {
+        get() {
+          // Service-level `get(ns)`: no namespace is pre-registered in this
+          // minimal smoke, so reads resolve to undefined and callers fall back
+          // to their defaults (the desktop shell reads its own namespace at
+          // apply time).
+          return undefined
+        },
         register() {
           return {
             get: () => ({ mode: 'compatibility' }),

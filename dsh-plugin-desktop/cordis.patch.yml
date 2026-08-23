@@ -11,6 +11,8 @@
       name: dsh-plugin-desktop/subscriptions
     - id: desktop-escalation-protocol
       name: dsh-plugin-desktop/escalation-protocol
+    - id: desktop-sandbox-escalation-guard
+      name: dsh-plugin-desktop/sandbox-escalation-guard
     - id: desktop-diagnostics
       name: dsh-plugin-desktop/diagnostics
     - id: desktop-notifications

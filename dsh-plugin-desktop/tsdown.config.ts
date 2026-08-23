@@ -26,6 +26,7 @@ export default defineConfig([
       terminal: 'src/terminal.ts',
       subscriptions: 'src/subscriptions/index.ts',
       'escalation-protocol': 'src/escalation-protocol.ts',
+      'sandbox-escalation-guard': 'src/sandbox-escalation-guard.ts',
       'update-checker': 'src/update-checker.ts',
       'update-download': 'src/update-download.ts',
       updates: 'src/updates.ts',

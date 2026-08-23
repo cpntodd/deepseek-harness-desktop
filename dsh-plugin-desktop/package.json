@@ -39,6 +39,10 @@
       "types": "./lib/types/escalation-protocol.d.ts",
       "default": "./lib/escalation-protocol.js"
     },
+    "./sandbox-escalation-guard": {
+      "types": "./lib/types/sandbox-escalation-guard.d.ts",
+      "default": "./lib/sandbox-escalation-guard.js"
+    },
     "./webserver": {
       "types": "./lib/types/webserver.d.ts",
       "default": "./lib/webserver.js"
