@@ -61,11 +61,22 @@ export function isStrictlyWider(currentMode: string, requestedMode: string): boo
   return wider.includes(requestedMode)
 }
 
-/** Whether one tool schema advertises the escalation argument pair. */
+/**
+ * Whether one tool schema advertises the escalation argument pair. The tool
+ * registry normalizes a tool's declared parameters into JSON-Schema form
+ * (`{ type, properties, required }`), so the escalation fields live under
+ * `parameters.properties`; the flat form (`parameters.sandbox_permissions`)
+ * is accepted too so the check stays correct across tool families and
+ * versions.
+ */
 export function advertisesEscalation(parameters: unknown): boolean {
-  return typeof parameters === 'object'
-    && parameters !== null
-    && 'sandbox_permissions' in (parameters as Record<string, unknown>)
+  if (typeof parameters !== 'object' || parameters === null) return false
+  const record = parameters as Record<string, unknown>
+  if ('sandbox_permissions' in record) return true
+  const properties = record.properties
+  return typeof properties === 'object'
+    && properties !== null
+    && 'sandbox_permissions' in (properties as Record<string, unknown>)
 }
 
 /**
@@ -182,7 +193,13 @@ export function shadowEscalationTools(
 
 /**
  * Register the guard: on every live agent, harden the escalation-advertising
- * tools the agent can see.
+ * tools the agent can see. The wrapper is registered through the agent's OWN
+ * scoped context (`agent.ctx.tools.register`), so it lands in the agent's
+ * scope layer and shadows the global tool for that agent only — the same
+ * per-agent tool pattern `@deepseek-ai/dsh-tool-subagent-report` uses. The
+ * agent's scope inherits `tools` from the agent loop (`AgentLoop` declares
+ * `inject: ['agents', 'sessions', 'llm', 'tools', 'systemPrompt']`), so a
+ * plain `agent.ctx.tools` read resolves the shared registry.
  * @param ctx - host context whose tools and agent lifecycle the guard reads.
  */
 export function apply(ctx: Context): void {

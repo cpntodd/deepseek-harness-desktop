@@ -37,12 +37,26 @@ describe('desktop sandbox escalation guard', () => {
   })
 
   describe('advertisesEscalation', () => {
-    it('detects the sandbox_permissions parameter on tool schemas', () => {
+    it('detects the sandbox_permissions parameter in flat tool schemas', () => {
       expect(advertisesEscalation({ command: {}, sandbox_permissions: {}, justification: {} })).toBe(true)
       expect(advertisesEscalation({ command: {} })).toBe(false)
       expect(advertisesEscalation(undefined)).toBe(false)
       expect(advertisesEscalation(null)).toBe(false)
       expect(advertisesEscalation('command')).toBe(false)
+    })
+
+    it('detects the sandbox_permissions parameter in JSON-Schema tool parameters', () => {
+      // The registry normalizes tool parameters into { type, properties, required }.
+      expect(advertisesEscalation({
+        type: 'object',
+        properties: { command: {}, sandbox_permissions: {}, justification: {} },
+        required: ['command'],
+      })).toBe(true)
+      expect(advertisesEscalation({
+        type: 'object',
+        properties: { command: {} },
+        required: ['command'],
+      })).toBe(false)
     })
   })
 
@@ -253,7 +267,11 @@ describe('desktop sandbox escalation guard', () => {
       }
       const agent = {
         id: 'session-1',
-        ctx: { tools: agentTools },
+        ctx: {
+          // The real agent scope inherits tools from the agent loop, so the
+          // guard shadows through agent.ctx.tools directly.
+          tools: agentTools,
+        },
       }
       const logger = { info: vi.fn() }
       const ctx = {
