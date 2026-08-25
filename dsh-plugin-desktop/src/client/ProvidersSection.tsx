@@ -6,8 +6,10 @@
  * credential state over the connection API, and writes keys through
  * `credentials.set` — plus an `apiKeyEnv` credential reference on `llm-pi-ai`
  * profiles via `settings.mutate`, mirroring the upstream Models page's core
- * interaction. It deliberately does NOT replicate custom-provider declaration,
- * onboarding dialogs, model discovery, or baseURL/catalog editing.
+ * interaction. The page lists only providers with stored credentials. New
+ * credentials are added by selecting an available provider from the live
+ * directory, then using the same credential and profile-reference writes as an
+ * existing row.
  *
  * Every color resolves through a `--dsw-alias-*` design token and every
  * user-visible string through the locale-bound `t` of the 'settings.providers'
@@ -111,6 +113,7 @@ export function buildProviderRows(
   providers: readonly ConfigurableProviderView[],
   namespaces: ReadonlyMap<string, { value: unknown }>,
   credentials: Readonly<Record<string, CredentialView>>,
+  includeUnconfigured = false,
 ): ProviderKeyRow[] {
   const seen = new Set<string>()
   return providers
@@ -126,6 +129,7 @@ export function buildProviderRows(
         ?? deriveKeyRef(entry.provider)
       return { provider: entry, ref, configured: credentials[ref]?.configured === true }
     })
+    .filter(row => includeUnconfigured || row.configured)
 }
 
 /**
@@ -208,14 +212,15 @@ export function ProvidersSection(props: ProvidersSectionProps) {
   const subscriptionsTranslate = subscriptionsT ?? fallbackSubscriptionsT
   const subscriptions = useSubscriptionsAuth(rpc, subscriptionsTranslate)
   const [rows, setRows] = useState<ProviderKeyRow[]>([])
+  const [available, setAvailable] = useState<ProviderKeyRow[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [error, setError] = useState<string | undefined>(undefined)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [saved, setSaved] = useState<Record<string, boolean>>({})
+  const [addOpen, setAddOpen] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [addRoute, setAddRoute] = useState('')
-  const [addDisplayName, setAddDisplayName] = useState('')
+  const [addProviderId, setAddProviderId] = useState('')
   const [addKey, setAddKey] = useState('')
   const [addError, setAddError] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
@@ -239,7 +244,9 @@ export function ProvidersSection(props: ProvidersSectionProps) {
         apiKeyEnvOf(namespaces.get(entry.settingsNs), entry.settingsPath) ?? deriveKeyRef(entry.provider)))]
       const credentialsResponse = await api.credentials.describe({ refs })
       if (!credentialsResponse.result.ok) throw new Error(credentialsResponse.result.error.message)
-      setRows(buildProviderRows(providers, namespaces, credentialsResponse.result.value.credentials))
+      const credentials = credentialsResponse.result.value.credentials
+      setRows(buildProviderRows(providers, namespaces, credentials))
+      setAvailable(buildProviderRows(providers, namespaces, credentials, true))
       setStatus('ready')
     } catch (err) {
       setStatus('error')
@@ -290,40 +297,33 @@ export function ProvidersSection(props: ProvidersSectionProps) {
 
   const addProvider = useCallback(async (): Promise<void> => {
     if (api === undefined) return
-    const route = addRoute.trim()
-    if (!validateProviderRoute(route)) {
-      setAddError(t('routeInvalid'))
-      return
-    }
-    if (rows.some(row => row.provider.provider === route)) {
-      setAddError(t('routeTaken'))
-      return
-    }
+    const row = available.find(entry => entry.provider.provider === addProviderId)
     const value = addKey.trim()
-    if (value.length === 0) return
+    if (row === undefined || value.length === 0) return
     setAdding(true)
     setAddError(undefined)
     try {
-      const ref = deriveKeyRef(route)
-      const profile: Record<string, unknown> = { apiKeyEnv: ref }
-      if (addDisplayName.trim().length > 0) profile.displayName = addDisplayName.trim()
-      const mutate = await api.settings.mutate({
-        ns: 'llm-pi-ai',
-        ops: [{ op: 'set', path: ['providers', route], value: profile }],
-      })
-      if (!mutate.result.ok) throw new Error(mutate.result.error.message)
-      const stored = await api.credentials.set({ ref, value })
+      const stored = await api.credentials.set({ ref: row.ref, value })
       if (!stored.result.ok) throw new Error(stored.result.error.message)
-      setAddRoute('')
-      setAddDisplayName('')
+      if (row.provider.settingsNs === 'llm-pi-ai'
+        && row.provider.settingsPath.length > 0
+        && row.ref === deriveKeyRef(row.provider.provider)) {
+        const mutate = await api.settings.mutate({
+          ns: row.provider.settingsNs,
+          ops: [{ op: 'set', path: [...row.provider.settingsPath, 'apiKeyEnv'], value: row.ref }],
+        })
+        if (!mutate.result.ok) throw new Error(mutate.result.error.message)
+      }
+      setAddProviderId('')
       setAddKey('')
+      setAddOpen(false)
       setAdding(false)
       void load()
     } catch (err) {
       setAddError(messageOf(err))
       setAdding(false)
     }
-  }, [api, addRoute, addDisplayName, addKey, rows, t, load])
+  }, [api, addKey, addProviderId, available, load])
 
   const sortedRows = sortProviderRowsByName(rows)
   const normalizedSearch = search.trim().toLowerCase()
@@ -415,33 +415,29 @@ export function ProvidersSection(props: ProvidersSectionProps) {
         })}
       </ul>
 
-      {!adding && addRoute.length === 0 && (
+      {!addOpen && (
         <div style={styles.form}>
-          <button type="button" style={styles.button} onClick={() => setAdding(true)}>{t('addProvider')}</button>
+          <button type="button" style={styles.button} onClick={() => setAddOpen(true)}>{t('add')}</button>
         </div>
       )}
-      {(adding || addRoute.length > 0) && (
+      {addOpen && (
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <span style={styles.name}>{t('addProvider')}</span>
           </div>
           <div style={styles.form}>
-            <input
+            <select
               style={styles.input}
-              value={addRoute}
-              aria-label={t('routeLabel')}
-              placeholder={t('routePlaceholder')}
+              value={addProviderId}
+              aria-label={t('providerLabel')}
               disabled={adding}
-              onChange={event => setAddRoute(event.target.value)}
-            />
-            <input
-              style={styles.input}
-              value={addDisplayName}
-              aria-label={t('displayNameLabel')}
-              placeholder={t('displayNamePlaceholder')}
-              disabled={adding}
-              onChange={event => setAddDisplayName(event.target.value)}
-            />
+              onChange={event => setAddProviderId(event.target.value)}
+            >
+              <option value="">{t('providerPlaceholder')}</option>
+              {available.filter(row => !row.configured).map(row => (
+                <option key={row.provider.provider} value={row.provider.provider}>{row.provider.displayName}</option>
+              ))}
+            </select>
           </div>
           <div style={styles.form}>
             <input
@@ -451,23 +447,23 @@ export function ProvidersSection(props: ProvidersSectionProps) {
               value={addKey}
               aria-label={t('keyLabel')}
               placeholder={t('keyPlaceholder')}
-              disabled={adding}
+              disabled={adding || addProviderId.length === 0}
               onChange={event => setAddKey(event.target.value)}
             />
             <button
               type="button"
               style={styles.button}
-              disabled={adding || addKey.trim().length === 0}
+              disabled={adding || addProviderId.length === 0 || addKey.trim().length === 0}
               onClick={() => { void addProvider() }}
             >
-              {adding ? t('creating') : t('createProvider')}
+              {adding ? t('creating') : t('add')}
             </button>
             {!adding && (
               <button
                 type="button"
                 style={styles.button}
                 disabled={adding}
-                onClick={() => { setAdding(false); setAddError(undefined) }}
+                onClick={() => { setAddOpen(false); setAddProviderId(''); setAddKey(''); setAddError(undefined) }}
               >
                 {t('cancel')}
               </button>

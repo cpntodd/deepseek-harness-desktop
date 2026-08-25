@@ -25,6 +25,39 @@ body[data-dsh-desktop-mode="advanced"] { margin: 0; background: transparent !imp
 .dshDesktopMacCaptionRow::before { content: ""; position: absolute; top: 0; right: 0; left: 0; height: ${MACOS_DRAG_REGION_HEIGHT}px; user-select: none; -webkit-app-region: drag; }
 .dshDesktopConversationSurface { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-base); }
 .dshDesktopDetailsSurface { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base); border-left: 1px solid var(--dsw-alias-border-l2); }
+/* The conversation package owns the metrics content, while the desktop shell
+   owns the window-wide status-bar geometry. This selector deliberately scopes
+   the promotion to advanced mode so compatibility mode is unchanged. */
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  width: 100vw;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 4px 16px 5px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent);
+  box-shadow: 0 -4px 14px color-mix(in srgb, var(--dsw-alias-bg-base) 55%, transparent);
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+}
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] > span { display: inline-block; }
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] .sep { margin: 0 12px; }
+body[data-dsh-desktop-mode="advanced"] [data-conversation-scroll] { padding-bottom: 34px; }
+@media (max-width: 640px) {
+  body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] { text-align: left; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] { background: var(--dsw-alias-bg-base); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] { box-shadow: none; }
+}
 .dshDesktopFrame[data-details-collapsed] .dshDesktopDetailsSurface { border-left: none; }
 .dshDesktopFrame[data-desktop-platform="win32"] { grid-template-rows: ${WINDOWS_TITLEBAR_HEIGHT}px minmax(0, 1fr); }
 .dshDesktopFrame[data-desktop-platform="win32"] .dshDesktopSidebarSurface { grid-row: 1 / -1; }
