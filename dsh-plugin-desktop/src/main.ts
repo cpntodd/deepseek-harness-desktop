@@ -964,6 +964,7 @@ async function start(): Promise<void> {
             })
           },
           prepareProfileRollback,
+          ...(hostCtx.get('desktopPlugins') === undefined ? {} : { plugins: hostCtx.get('desktopPlugins') }),
         }))
         provideCmdline(hostCtx, {
           args: ['--host', '127.0.0.1', '--port', String(prepared.port)],

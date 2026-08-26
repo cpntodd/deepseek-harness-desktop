@@ -1,6 +1,7 @@
 /** Private same-origin Desktop settings API shared with the bundled renderer. */
 
 import type { DesktopMarketProvider } from './desktop-market.ts'
+import type { DesktopPluginBundle, DesktopPluginDisablePreview, DesktopPluginEnablePreview } from './desktop-plugins.ts'
 
 /** Read the current Desktop-owned settings state. */
 export const DESKTOP_SETTINGS_PATH = '/api/desktop/settings'
@@ -16,6 +17,12 @@ export const DESKTOP_PROFILE_DELETE_PATH = '/api/desktop/profiles/delete'
 
 /** Persist the Market provider selected for the next Desktop generation. */
 export const DESKTOP_MARKET_SELECT_PATH = '/api/desktop/market/select'
+
+/** Preview enabling or disabling one direct Desktop plugin bundle. */
+export const DESKTOP_PLUGIN_PREVIEW_PATH = '/api/desktop/plugins/preview'
+
+/** Execute a previously previewed Desktop plugin change. */
+export const DESKTOP_PLUGIN_EXECUTE_PATH = '/api/desktop/plugins/execute'
 
 /** Open the launcher-owned DSH terminal without accepting command text. */
 export const DESKTOP_TERMINAL_OPEN_PATH = '/api/desktop/terminal/open'
@@ -61,6 +68,8 @@ export interface DesktopSettingsResponse {
   readonly profiles: readonly DesktopSettingsProfileView[]
   /** Market choice for the current and next generation. */
   readonly market: DesktopSettingsMarketView
+  /** Direct profile bundles with mutable enable state. */
+  readonly plugins?: readonly DesktopPluginBundle[]
 }
 
 /** Exact body accepted by the profile-creation endpoint. */
@@ -100,6 +109,13 @@ export interface DesktopMarketSelectRequest {
 
 /** Successful Market selection handoff. */
 export type DesktopMarketSelectResponse = DesktopRestartAcceptance
+
+export type DesktopPluginPreviewRequest = Readonly<{ action: 'enable' | 'disable'; bundleId: string }>
+export type DesktopPluginPreviewResponse = DesktopPluginDisablePreview | DesktopPluginEnablePreview
+export type DesktopPluginExecuteRequest = Readonly<{ previewId: string }>
+export interface DesktopPluginExecuteResponse extends DesktopRestartAcceptance {
+  readonly packageName: string
+}
 
 /** Exact empty body accepted by the terminal endpoint. */
 export type DesktopTerminalOpenRequest = Readonly<Record<string, never>>

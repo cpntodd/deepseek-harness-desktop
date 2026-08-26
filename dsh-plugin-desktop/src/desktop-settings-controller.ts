@@ -4,6 +4,11 @@ import type {
   DesktopMarketProvider,
   DesktopMarketSnapshot,
 } from './desktop-market.ts'
+import type {
+  DesktopPluginDisablePreview,
+  DesktopPluginEnablePreview,
+  DesktopPlugins,
+} from './desktop-plugins.ts'
 import type { DesktopProfileSummary } from './profile-manager.ts'
 import type { DesktopProfiles } from './profile-service.ts'
 import type {
@@ -41,6 +46,8 @@ export interface DesktopSettingsControllerBootstrap {
   openProfileCreator(): void
   /** Prepare a last-known-good rollback without quiescing the Host yet. */
   prepareProfileRollback(): DesktopSettingsPostResponse<DesktopProfileRollbackResponse>
+  /** Direct plugin inventory and two-phase mutation capability. */
+  readonly plugins?: DesktopPlugins | undefined
 }
 
 /** A persisted response plus work that must run only after `res.end()`. */
@@ -99,6 +106,7 @@ export class DesktopSettingsController {
         )),
       ),
       market: projectMarket(this.bootstrap.readMarket(), this.effectiveMarket),
+      ...(this.bootstrap.plugins === undefined ? {} : { plugins: Object.freeze(this.bootstrap.plugins.list()) }),
     })
   }
 
@@ -144,6 +152,22 @@ export class DesktopSettingsController {
     return Object.freeze({
       response: Object.freeze({ accepted: true, restartRequired }),
       ...(restartRequired ? { afterResponse: () => { this.bootstrap.scheduleRestart() } } : {}),
+    })
+  }
+
+  previewPlugin(action: 'enable' | 'disable', bundleId: string): DesktopPluginDisablePreview | DesktopPluginEnablePreview {
+    if (this.bootstrap.plugins === undefined) throw new Error('dsh-plugin-desktop: plugin management is unavailable')
+    return action === 'enable' ? this.bootstrap.plugins.previewEnable(bundleId) : this.bootstrap.plugins.previewDisable(bundleId)
+  }
+
+  async executePlugin(previewId: string): Promise<DesktopSettingsPostResponse<{ accepted: true; restartRequired: true; packageName: string }>> {
+    if (this.bootstrap.plugins === undefined) throw new Error('dsh-plugin-desktop: plugin management is unavailable')
+    const result = previewId.startsWith('enable_')
+      ? await this.bootstrap.plugins.executeEnable(previewId)
+      : await this.bootstrap.plugins.executeDisable(previewId)
+    return Object.freeze({
+      response: Object.freeze({ accepted: true as const, restartRequired: true as const, packageName: result.packageName }),
+      afterResponse: () => { this.bootstrap.scheduleRestart() },
     })
   }
 

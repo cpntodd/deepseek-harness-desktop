@@ -6,6 +6,8 @@ const PROFILE_SELECT_PATH = '/api/desktop/profiles/select'
 const PROFILE_DELETE_PATH = '/api/desktop/profiles/delete'
 const MARKET_SELECT_PATH = '/api/desktop/market/select'
 const TERMINAL_OPEN_PATH = '/api/desktop/terminal/open'
+const PLUGIN_PREVIEW_PATH = '/api/desktop/plugins/preview'
+const PLUGIN_EXECUTE_PATH = '/api/desktop/plugins/execute'
 const MAX_PROFILES = 256
 const MAX_PROFILE_NAME_LENGTH = 255
 
@@ -33,6 +35,7 @@ export interface DesktopSettingsView {
   readonly current: string
   readonly profiles: readonly DesktopProfileView[]
   readonly market: DesktopMarketView
+  readonly plugins?: readonly { readonly bundleId: string; readonly packageName: string; readonly status: 'active' | 'disabled'; readonly mutable: boolean }[]
 }
 
 /** A persisted selection that requires a new Desktop generation. */
@@ -48,6 +51,8 @@ export interface DesktopSettingsApi {
   selectProfile(name: string): Promise<DesktopRestartAcceptance>
   deleteProfile(name: string): Promise<DesktopSettingsView>
   selectMarket(provider: DesktopMarketProvider): Promise<DesktopRestartAcceptance>
+  previewPlugin(action: 'enable' | 'disable', bundleId: string): Promise<{ previewId: string }>
+  executePlugin(previewId: string): Promise<DesktopRestartAcceptance & { packageName: string }>
   openTerminal(): Promise<void>
 }
 
@@ -92,13 +97,18 @@ export function parseDesktopSettingsView(value: unknown): DesktopSettingsView {
     || !isObject(value.market)
     || !isMarketProvider(value.market.requested)
     || !isMarketProvider(value.market.effective)
-    || typeof value.market.legacyDefaulted !== 'boolean') {
+    || typeof value.market.legacyDefaulted !== 'boolean'
+    || (value.plugins !== undefined && !Array.isArray(value.plugins))) {
     throw new Error('dsh-plugin-desktop: invalid Desktop settings response')
   }
   const profiles = value.profiles.map(parseProfile)
   if (new Set(profiles.map(profile => profile.name)).size !== profiles.length) {
     throw new Error('dsh-plugin-desktop: duplicate profile in settings response')
   }
+  const plugins = (value.plugins ?? []).map(plugin => {
+    if (!isObject(plugin) || typeof plugin.bundleId !== 'string' || typeof plugin.packageName !== 'string' || (plugin.status !== 'active' && plugin.status !== 'disabled') || typeof plugin.mutable !== 'boolean') throw new Error('dsh-plugin-desktop: invalid plugin settings response')
+    return Object.freeze({ bundleId: plugin.bundleId, packageName: plugin.packageName, status: plugin.status, mutable: plugin.mutable })
+  })
   return Object.freeze({
     current: value.current,
     profiles: Object.freeze(profiles),
@@ -107,11 +117,13 @@ export function parseDesktopSettingsView(value: unknown): DesktopSettingsView {
       effective: value.market.effective,
       legacyDefaulted: value.market.legacyDefaulted,
     }),
+    ...(value.plugins === undefined ? {} : { plugins: Object.freeze(plugins) }),
   })
 }
 
 /** Validate restart acknowledgement returned before the Host generation exits. */
 export function parseDesktopRestartAcceptance(value: unknown): DesktopRestartAcceptance {
+
   if (!isObject(value) || value.accepted !== true || typeof value.restartRequired !== 'boolean') {
     throw new Error('dsh-plugin-desktop: invalid Desktop restart response')
   }
@@ -176,6 +188,16 @@ export function createDesktopSettingsApi(fetcher: FetchLike = globalThis.fetch.b
     async selectMarket(provider: DesktopMarketProvider) {
       return parseDesktopRestartAcceptance(await readResponse(await post(fetcher, MARKET_SELECT_PATH, { provider })))
     },
+    async previewPlugin(action: 'enable' | 'disable', bundleId: string) {
+      const value = await readResponse(await post(fetcher, PLUGIN_PREVIEW_PATH, { action, bundleId }))
+      if (!isObject(value) || typeof value.previewId !== 'string') throw new Error('dsh-plugin-desktop: invalid plugin preview response')
+      return value as { previewId: string }
+    },
+    async executePlugin(previewId: string) {
+      const value = await readResponse(await post(fetcher, PLUGIN_EXECUTE_PATH, { previewId }))
+      if (!isObject(value) || value.accepted !== true || value.restartRequired !== true || typeof value.packageName !== 'string') throw new Error('dsh-plugin-desktop: invalid plugin execute response')
+      return Object.freeze({ accepted: true as const, restartRequired: true as const, packageName: value.packageName })
+    },
     async openTerminal() {
       parseDesktopActionAcceptance(await readResponse(await post(fetcher, TERMINAL_OPEN_PATH, {})))
     },
@@ -189,4 +211,6 @@ export const desktopSettingsPaths = Object.freeze({
   profileDelete: PROFILE_DELETE_PATH,
   marketSelect: MARKET_SELECT_PATH,
   terminalOpen: TERMINAL_OPEN_PATH,
+  pluginPreview: PLUGIN_PREVIEW_PATH,
+  pluginExecute: PLUGIN_EXECUTE_PATH,
 })

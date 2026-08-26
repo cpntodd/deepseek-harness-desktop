@@ -44,7 +44,7 @@ export type DesktopSettingsSectionProps =
   & InjectFace<DesktopSettingsSectionInjected>
 
 type Translate = DesktopSettingsSectionProps['t']
-type BusyOperation = 'load' | 'create-profile' | 'select-profile' | 'delete-profile' | 'select-market' | 'mode' | 'permission' | 'notification'
+type BusyOperation = 'load' | 'create-profile' | 'select-profile' | 'delete-profile' | 'select-market' | 'plugin' | 'mode' | 'permission' | 'notification'
 type RestartState = 'none' | 'restarting' | 'required'
 
 function useScope<T>(scope: SettingsScope<T>) {
@@ -284,6 +284,14 @@ export function DesktopSettingsSection({
     })
   }
 
+  const togglePlugin = (plugin: NonNullable<DesktopSettingsView['plugins']>[number]): void => {
+    void run('plugin', async () => {
+      const preview = await api.previewPlugin(plugin.status === 'active' ? 'disable' : 'enable', plugin.bundleId)
+      await api.executePlugin(preview.previewId)
+      requestRestart()
+    })
+  }
+
   const setMode = (next: DesktopShellSettings['mode']): void => {
     void run('mode', async () => {
       await desktopSettings.set('mode', next)
@@ -435,6 +443,11 @@ export function DesktopSettingsSection({
             ))}
           </div>
         )}
+      </section>
+
+      <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-plugins-title">
+        <div><h3 id="dsh-desktop-plugins-title">{t('pluginsTitle')}</h3><p className="dshDesktopSettingsGroupIntro">{t('pluginsIntro')}</p></div>
+        {view?.plugins?.map(plugin => <ToggleRow key={plugin.bundleId} label={plugin.packageName} checked={plugin.status === 'active'} disabled={!plugin.mutable || busy !== undefined || restart !== 'none'} onChange={() => { togglePlugin(plugin) }} />)}
       </section>
 
       <section className="dshDesktopSettingsGroup" aria-labelledby="dsh-desktop-presentation-title">

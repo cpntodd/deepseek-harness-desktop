@@ -367,13 +367,15 @@ export function useSubscriptionsAuth(
   }, [rpc])
 
   // Fetch usage once a provider is logged in; drop the cached snapshot on
-  // logout so a re-login refetches. A failed lookup does not auto-retry — the
-  // per-card Refresh button is the retry path.
+  // logout so a re-login refetches. Logged-in providers refresh periodically
+  // so quota meters visibly follow provider-side consumption during active work.
   useEffect(() => {
+    const loggedIn = new Set<SubscriptionProvider>()
     for (const { id } of SUBSCRIPTION_PROVIDERS) {
       const status = statuses[id]
       if (status === undefined) continue
       if (status.loggedIn) {
+        loggedIn.add(id)
         if (usages[id] === undefined && usageErrors[id] === undefined) void loadUsage(id)
       } else if (usages[id] !== undefined || usageErrors[id] !== undefined) {
         setUsages((prev) => {
@@ -388,6 +390,11 @@ export function useSubscriptionsAuth(
         })
       }
     }
+    if (loggedIn.size === 0) return
+    const timer = window.setInterval(() => {
+      for (const provider of loggedIn) void loadUsage(provider)
+    }, 5000)
+    return () => window.clearInterval(timer)
   }, [statuses, usages, usageErrors, loadUsage])
 
   const login = useCallback(async (provider: SubscriptionProvider): Promise<void> => {

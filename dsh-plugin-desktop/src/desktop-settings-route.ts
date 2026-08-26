@@ -7,6 +7,8 @@ import type DesktopSettingsController from './desktop-settings-controller.ts'
 import type { DesktopSettingsPostResponse } from './desktop-settings-controller.ts'
 import type {
   DesktopMarketSelectRequest,
+  DesktopPluginExecuteRequest,
+  DesktopPluginPreviewRequest,
   DesktopProfileCreateRequest,
   DesktopProfileDeleteRequest,
   DesktopProfileSelectRequest,
@@ -141,6 +143,17 @@ function parseProfileRequest(value: unknown): DesktopProfileCreateRequest | unde
 
 function isMarketProvider(value: unknown): value is DesktopMarketProvider {
   return value === 'disabled' || value === 'community-market' || value === 'dsh-market'
+}
+
+function parsePluginPreviewRequest(value: unknown): DesktopPluginPreviewRequest | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (Object.keys(record).length !== 2 || (record.action !== 'enable' && record.action !== 'disable') || typeof record.bundleId !== 'string') return undefined
+  return { action: record.action, bundleId: record.bundleId }
+}
+function parsePluginExecuteRequest(value: unknown): DesktopPluginExecuteRequest | undefined {
+  if (!isExactRecord(value, 'previewId') || typeof value.previewId !== 'string') return undefined
+  return value as unknown as DesktopPluginExecuteRequest
 }
 
 function parseMarketRequest(value: unknown): DesktopMarketSelectRequest | undefined {
@@ -287,6 +300,24 @@ export async function handleDesktopProfileDeleteRequest(
     reportError('delete profile', cause)
     finishJson(res, 409, error('profile could not be deleted'))
   }
+}
+
+/** Preview one safe direct plugin toggle. */
+export async function handleDesktopPluginPreviewRequest(req: IncomingMessage, res: ServerResponse, expectedOrigin: string, controller: DesktopSettingsController, reportError: (operation: string, cause: unknown) => void = () => {}): Promise<void> {
+  if (req.method !== 'POST') return finishJson(res, 405, error('method not allowed'), 'POST')
+  if (!isSameOriginLoopbackRequest(req, expectedOrigin, true)) return finishJson(res, 403, error('forbidden'))
+  const value = await parsePostBody(req, res); if (value === INVALID_BODY) return
+  const request = parsePluginPreviewRequest(value); if (request === undefined) return finishJson(res, 400, error('invalid plugin preview request'))
+  try { finishJson(res, 200, controller.previewPlugin(request.action, request.bundleId)) } catch (cause) { reportError('preview plugin change', cause); finishJson(res, 409, error('plugin change could not be previewed')) }
+}
+
+/** Execute one previously previewed plugin toggle and schedule restart. */
+export async function handleDesktopPluginExecuteRequest(req: IncomingMessage, res: ServerResponse, expectedOrigin: string, controller: DesktopSettingsController, reportError: (operation: string, cause: unknown) => void = () => {}): Promise<void> {
+  if (req.method !== 'POST') return finishJson(res, 405, error('method not allowed'), 'POST')
+  if (!isSameOriginLoopbackRequest(req, expectedOrigin, true)) return finishJson(res, 403, error('forbidden'))
+  const value = await parsePostBody(req, res); if (value === INVALID_BODY) return
+  const request = parsePluginExecuteRequest(value); if (request === undefined) return finishJson(res, 400, error('invalid plugin execute request'))
+  try { finishPostResponse(res, 202, await controller.executePlugin(request.previewId), 'plugin change', reportError) } catch (cause) { reportError('execute plugin change', cause); finishJson(res, 409, error('plugin change could not be saved')) }
 }
 
 /** Persist one Market provider and queue restart only after persistence succeeds. */

@@ -29,6 +29,8 @@ import {
 import {
   DESKTOP_DIAGNOSTICS_EXPORT_PATH,
   DESKTOP_MARKET_SELECT_PATH,
+  DESKTOP_PLUGIN_EXECUTE_PATH,
+  DESKTOP_PLUGIN_PREVIEW_PATH,
   DESKTOP_PROFILE_CREATE_PATH,
   DESKTOP_PROFILE_CREATE_WINDOW_PATH,
   DESKTOP_PROFILE_DELETE_PATH,
@@ -40,6 +42,8 @@ import {
 import {
   handleDesktopDiagnosticsExportRequest,
   handleDesktopMarketSelectRequest,
+  handleDesktopPluginExecuteRequest,
+  handleDesktopPluginPreviewRequest,
   handleDesktopProfileCreateRequest,
   handleDesktopProfileCreateWindowRequest,
   handleDesktopProfileDeleteRequest,
@@ -189,6 +193,8 @@ export function apply(ctx: Context, config: Config): void {
       [DESKTOP_PROFILE_ROLLBACK_PATH, handleDesktopProfileRollbackRequest],
       [DESKTOP_PROFILE_SELECT_PATH, handleDesktopProfileSelectRequest],
       [DESKTOP_MARKET_SELECT_PATH, handleDesktopMarketSelectRequest],
+      [DESKTOP_PLUGIN_PREVIEW_PATH, handleDesktopPluginPreviewRequest],
+      [DESKTOP_PLUGIN_EXECUTE_PATH, handleDesktopPluginExecuteRequest],
       [DESKTOP_TERMINAL_OPEN_PATH, handleDesktopTerminalOpenRequest],
       [DESKTOP_DIAGNOSTICS_EXPORT_PATH, handleDesktopDiagnosticsExportRequest],
     ] as const
