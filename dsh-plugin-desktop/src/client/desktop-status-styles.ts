@@ -56,6 +56,17 @@ const CSS = `
 .dshDesktopStatusUsageSection .dshDesktopUsageMeter {
   padding-top: 0;
 }
+.dshDesktopStatusSessionStats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .dshDesktopStatusSection {
   display: flex;
   flex-direction: column;

@@ -25,6 +25,11 @@ body[data-dsh-desktop-mode="advanced"] { margin: 0; background: transparent !imp
 .dshDesktopMacCaptionRow::before { content: ""; position: absolute; top: 0; right: 0; left: 0; height: ${MACOS_DRAG_REGION_HEIGHT}px; user-select: none; -webkit-app-region: drag; }
 .dshDesktopConversationSurface { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--dsw-alias-bg-base); }
 .dshDesktopDetailsSurface { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base); border-left: 1px solid var(--dsw-alias-border-l2); }
+/* Advanced mode renders session metrics in Agent Status below the usage bars;
+   remove the upstream dock copy so its single-line ellipsis cannot remain visible. */
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
+  display: none !important;
+}
 /* The conversation package owns the metrics content, while the desktop shell
    owns the window-wide status-bar geometry. This selector deliberately scopes
    the promotion to advanced mode so compatibility mode is unchanged. */

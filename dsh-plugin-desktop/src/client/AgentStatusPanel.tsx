@@ -5,9 +5,11 @@
  * from the same-origin desktop status API (MCP + LSP) and the session's
  * `todos` projection; the panel owns no subscription machinery.
  */
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
+import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats/client'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import { ActiveUsageMeter, type ActiveUsageMeterProps } from './subscriptions/SubscriptionsSection.tsx'
 import {
   readDesktopLspStatus,
@@ -75,6 +77,45 @@ function LspSection({ providers, t }: { providers: readonly DesktopLspProviderVi
   )
 }
 
+function formatStatusDuration(ms: number): string {
+  const seconds = ms / 1000
+  if (seconds < 60) return `${Math.round(seconds * 10) / 10}s`
+  const whole = Math.round(seconds)
+  return `${Math.floor(whole / 60)}m${whole % 60}s`
+}
+
+function formatStatusTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1000000) return `${Math.round(n / 1000)}K`
+  return `${Math.round(n / 1000000)}M`
+}
+
+function StatusText({ stats, usage }: { stats: SessionStatsProjection | undefined; usage: TokenUsageProjection | undefined }) {
+  const lines = useMemo(() => {
+    if (stats === undefined || stats.steps === 0) return []
+    const result = [`${stats.turns} turns · ${stats.steps} steps`]
+    const durations = []
+    if (stats.llmMs > 0) durations.push(`LLM ${formatStatusDuration(stats.llmMs)}`)
+    if (stats.toolMs > 0) durations.push(`Tool call ${formatStatusDuration(stats.toolMs)}`)
+    if (durations.length > 0) result.push(durations.join(' · '))
+    const speeds = []
+    if (stats.ttftSteps > 0) speeds.push(`TTFT avg ${formatStatusDuration(stats.ttftMs / stats.ttftSteps)}`)
+    if (stats.decodeMs > 0) speeds.push(`${Math.round(stats.decodeTokens / (stats.decodeMs / 1000))} tok/s`)
+    if (speeds.length > 0) result.push(speeds.join(' · '))
+    if (usage !== undefined) {
+      const input = usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+      if (input > 0 || usage.outputTokens > 0) {
+        const cache = input > 0 ? Math.round(usage.cacheReadTokens / input * 100) : 0
+        if (input > 0) result.push(`Cache hit ${cache}%`)
+        result.push(`Input ${formatStatusTokens(input)} tok · Output ${formatStatusTokens(usage.outputTokens)} tok`)
+      }
+    }
+    return result
+  }, [stats, usage])
+  if (lines.length === 0) return null
+  return <div className="dshDesktopStatusSessionStats" aria-label="Session statistics">{lines.map(line => <div key={line}>{line}</div>)}</div>
+}
+
 function TodoStatusGlyph({ status }: { status: TodoItem['status'] }) {
   const gradientId = useId()
   if (status === 'in_progress') {
@@ -121,6 +162,8 @@ export function AgentStatusPanel({ sessionId, useProjection, t, closeDetails, rp
   const controllerRef = useRef<AbortController | undefined>(undefined)
   const mountedRef = useRef(true)
   const todos = useProjection('todos')
+  const stats = useProjection('sessionStats')
+  const usage = useProjection('tokenUsage')
 
   const load = async (): Promise<void> => {
     controllerRef.current?.abort()
@@ -175,6 +218,7 @@ export function AgentStatusPanel({ sessionId, useProjection, t, closeDetails, rp
             <h3>{t('usage')}</h3>
           </div>
           <ActiveUsageMeter rpc={rpc} t={usageT} sessionId={sessionId} />
+          <StatusText stats={stats} usage={usage} />
         </section>
         <McpSection servers={mcp} t={t} />
         <LspSection providers={lsp} t={t} />
