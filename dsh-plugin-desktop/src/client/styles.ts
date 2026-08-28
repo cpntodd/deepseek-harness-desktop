@@ -76,20 +76,55 @@ body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] .sep {
 body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
   position: static !important;
   inset: auto !important;
-  align-self: stretch;
-  flex: none;
+  align-self: stretch !important;
+  flex: none !important;
   width: 100% !important;
   max-width: none !important;
   height: auto !important;
   max-height: none !important;
   min-height: 20px !important;
-  padding: 4px 16px 5px;
-  margin: 0;
-  box-sizing: border-box;
+  padding: 4px 16px 5px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
   display: flex !important;
   flex-wrap: wrap !important;
   overflow: visible !important;
-  overflow-wrap: anywhere;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+  overflow-wrap: anywhere !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere !important;
+}
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] > span:last-child {
+  flex-basis: 100%;
+  justify-content: center;
+}
+html body[data-dsh-desktop-mode="advanced"] div[class*="StatsLine_root"] {
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+  text-overflow: unset !important;
+  white-space: normal !important;
+  overflow: visible !important;
+}
+body[data-dsh-desktop-mode="advanced"] [data-slot="conversation.composer.dock"],
+body[data-dsh-desktop-mode="advanced"] [data-slot="conversation.composer.dock"] > * {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
   white-space: normal !important;
   text-overflow: clip !important;
 }
