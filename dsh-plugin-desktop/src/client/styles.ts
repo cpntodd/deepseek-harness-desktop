@@ -232,5 +232,25 @@ export function installAdvancedStyles(): () => void {
   style.dataset.pluginCss = 'dsh-plugin-desktop/advanced-shell'
   style.textContent = ADVANCED_STYLES
   document.head.appendChild(style)
-  return () => { style.remove() }
+
+  // The upstream conversation package can replace the dock node after each
+  // session projection update. Hide the mounted node imperatively as well as
+  // through CSS so the duplicate can never reappear between style recalculations.
+  const hideUpstreamStats = () => {
+    document.querySelectorAll<HTMLElement>('[class*="StatsLine_root"]').forEach(element => {
+      if (element.closest('[data-slot="conversation.composer.dock"]') !== null) {
+        element.style.setProperty('display', 'none', 'important')
+      }
+    })
+  }
+  hideUpstreamStats()
+  const observer = new MutationObserver(hideUpstreamStats)
+  observer.observe(document.body, { childList: true, subtree: true })
+  return () => {
+    observer.disconnect()
+    document.querySelectorAll<HTMLElement>('[class*="StatsLine_root"]').forEach(element => {
+      element.style.removeProperty('display')
+    })
+    style.remove()
+  }
 }
