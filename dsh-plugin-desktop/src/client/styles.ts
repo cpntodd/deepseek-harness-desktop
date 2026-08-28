@@ -33,6 +33,8 @@ body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
 /* The conversation package owns the metrics content, while the desktop shell
    owns the window-wide status-bar geometry. This selector deliberately scopes
    the promotion to advanced mode so compatibility mode is unchanged. */
+/* This rule is intentionally kept as a no-op marker for the retired upstream
+   row; AgentStatusPanel is now its sole visible owner. */
 body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
   position: fixed;
   right: 0;
@@ -146,6 +148,11 @@ body[data-dsh-desktop-mode="advanced"] [data-conversation-scroll] { padding-bott
 }
 [class*="StatsLine_root"] > span { display: inline !important; }
 [class*="StatsLine_root"] .sep { margin: 0 8px; }
+/* The original conversation stats dock is retired in advanced mode. The
+   complete presentation is owned by AgentStatusPanel below Usage. */
+body[data-dsh-desktop-mode="advanced"] [data-slot="conversation.composer.dock"]:has([class*="StatsLine_root"]) {
+  display: none !important;
+}
 @media (max-width: 640px) {
   body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] { text-align: left; }
 }
