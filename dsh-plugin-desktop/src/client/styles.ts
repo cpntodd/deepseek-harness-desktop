@@ -237,10 +237,10 @@ export function installAdvancedStyles(): () => void {
   // session projection update. Hide the mounted node imperatively as well as
   // through CSS so the duplicate can never reappear between style recalculations.
   const hideUpstreamStats = () => {
+    // StatsLine_root is the upstream conversation status bar. Agent Status uses
+    // dshDesktopStatusSessionStats and is deliberately not selected here.
     document.querySelectorAll<HTMLElement>('[class*="StatsLine_root"]').forEach(element => {
-      if (element.closest('[data-slot="conversation.composer.dock"]') !== null) {
-        element.style.setProperty('display', 'none', 'important')
-      }
+      element.style.setProperty('display', 'none', 'important')
     })
   }
   hideUpstreamStats()
