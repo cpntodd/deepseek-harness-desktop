@@ -8,7 +8,8 @@
  * Providers section (`../providers.ts`) renders {@link SubscriptionsSection}
  * beneath its API-key list. This apply registers only the non-section
  * surfaces — the image/video toolviews, the composer Speed toggle, and the
- * `/fast` slash command.
+ * `/fast` slash command. Provider usage is rendered by Agent Status in the
+ * advanced shell.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -59,8 +60,9 @@ export const inject = ['slots', 'connection', 'locale']
 
 /**
  * Register the Subscriptions toolviews, composer Speed toggle, and `/fast`
- * command. The section nav entry itself is owned by the combined Providers
- * section; this apply contributes no `settings.section`.
+ * command. Provider usage is registered by the advanced Agent Status surface.
+ * The section nav entry itself is owned by the combined Providers section; this
+ * apply contributes no `settings.section`.
  * @param ctx - client root context.
  */
 export function applySubscriptionsClient(ctx: ClientContext): void {

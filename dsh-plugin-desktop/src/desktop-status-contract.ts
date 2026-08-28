@@ -7,6 +7,8 @@
 
 /** Private route serving configured LSP providers for the active profile. */
 export const DESKTOP_STATUS_LSP_PROVIDERS_PATH = '/api/desktop/status/lsp-providers'
+/** Same-origin route returning Desktop-owned installed MCP servers. */
+export const DESKTOP_STATUS_MCP_INSTALLATIONS_PATH = '/api/desktop/status/mcp-installations'
 
 /** One configured LSP provider, derived from the profile's `dsh-lsp-stdio` server rows. */
 export interface DesktopLspProviderView {

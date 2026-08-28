@@ -56,6 +56,39 @@ const CSS = `
 }
 .dshDesktopSettingsChoice[data-actionable="true"] { cursor: pointer; }
 .dshDesktopSettingsChoice[data-actionable="true"]:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsPluginCard {
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dshDesktopSettingsPluginCardHeader {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.dshDesktopSettingsPluginCardHeader:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dshDesktopSettingsPluginCardHeader strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dshDesktopSettingsPluginCardState { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.dshDesktopSettingsPluginCardDetails {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
 .dshDesktopSettingsChoice:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
@@ -197,6 +230,42 @@ const CSS = `
 .dshDesktopSettingsNotice { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
 .dshDesktopSettingsError { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
 .dshDesktopSettingsSuccess { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent); }
+.dshDesktopStatus .dshDesktopUsageMeter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 0 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+.dshDesktopUsageMeterProvider {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.dshDesktopUsageMeterProviderName {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.dshDesktopUsageMeterStatus { color: var(--dsw-alias-label-tertiary); }
+.dshDesktopUsageMeterRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(120px, 2fr) 36px;
+  gap: 8px;
+  align-items: center;
+}
+.dshDesktopUsageMeterLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dshDesktopUsageMeterTrack {
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dshDesktopUsageMeterFill { display: block; height: 100%; border-radius: inherit; transition: width 240ms ease, background-color 240ms ease; }
+.dshDesktopUsageMeterValue { text-align: right; }
 .dshDesktopSettingsToggle {
   flex: 0 0 auto;
   position: relative;

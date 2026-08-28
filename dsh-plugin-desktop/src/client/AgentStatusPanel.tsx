@@ -8,6 +8,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
+import { ActiveUsageMeter, type ActiveUsageMeterProps } from './subscriptions/SubscriptionsSection.tsx'
 import {
   readDesktopLspStatus,
   readDesktopMcpStatus,
@@ -18,6 +19,8 @@ import {
 /** Registration-side business face for the status panel. */
 export interface AgentStatusPanelInjected {
   readonly closeDetails: () => void
+  readonly rpc: ActiveUsageMeterProps['rpc']
+  readonly usageT: ActiveUsageMeterProps['t']
 }
 
 /** Renderer-composed props for the details status panel entry. */
@@ -112,41 +115,44 @@ function TodoSection({ todos, t }: { todos: readonly TodoItem[]; t: AgentStatusP
   )
 }
 
-export function AgentStatusPanel({ sessionId, useProjection, t, closeDetails }: AgentStatusPanelProps) {
+export function AgentStatusPanel({ sessionId, useProjection, t, closeDetails, rpc, usageT }: AgentStatusPanelProps) {
   const [mcp, setMcp] = useState<readonly DesktopMcpServerView[]>([])
   const [lsp, setLsp] = useState<readonly DesktopLspProviderView[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | undefined>(undefined)
   const controllerRef = useRef<AbortController | undefined>(undefined)
+  const mountedRef = useRef(true)
   const todos = useProjection('todos')
 
   const load = async (): Promise<void> => {
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
-    setLoading(true)
-    setError(undefined)
     try {
-      const [mcpResult, lspResult] = await Promise.all([
+      const [mcpResult, lspResult] = await Promise.allSettled([
         readDesktopMcpStatus(controller.signal),
         readDesktopLspStatus(controller.signal),
       ])
-      if (controller.signal.aborted) return
-      setMcp(mcpResult.installations)
-      setLsp(lspResult.providers)
-    } catch (cause) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'failed')
-    } finally {
-      if (!controller.signal.aborted) setLoading(false)
+      if (controller.signal.aborted || !mountedRef.current) return
+      if (mcpResult.status === 'fulfilled') setMcp(mcpResult.value.installations)
+      if (lspResult.status === 'fulfilled') setLsp(lspResult.value.providers)
+    } catch {
+      // Status refresh is best-effort; retain the last settled panel snapshot.
     }
   }
 
-  // Refresh when the session changes and whenever the todo projection changes
-  // (a proxy for "the agent made progress", which can add/activate servers).
+  // Refresh on session changes and at a modest cadence while the panel is
+  // open. The projection is intentionally not an effect dependency: some
+  // projection implementations return a fresh object on every frame, which
+  // would abort/restart the request loop and prevent live facts settling.
   useEffect(() => {
+    mountedRef.current = true
     void load()
-    return () => { controllerRef.current?.abort() }
-  }, [sessionId, todos])
+    const timer = window.setInterval(() => { void load() }, 20_000)
+    return () => {
+      mountedRef.current = false
+      window.clearInterval(timer)
+      controllerRef.current?.abort()
+    }
+  }, [sessionId])
 
   return (
     <div className="dshDesktopStatus" role="region" aria-label={t('title')}>
@@ -164,8 +170,12 @@ export function AgentStatusPanel({ sessionId, useProjection, t, closeDetails }: 
         </button>
       </div>
       <div className="dshDesktopStatusBody">
-        {error !== undefined && <div className="dshDesktopStatusLoading" role="alert">{t('error')}</div>}
-        {loading && <div className="dshDesktopStatusLoading">{t('loading')}</div>}
+        <section className="dshDesktopStatusSection dshDesktopStatusUsageSection">
+          <div className="dshDesktopStatusSectionHead">
+            <h3>{t('usage')}</h3>
+          </div>
+          <ActiveUsageMeter rpc={rpc} t={usageT} sessionId={sessionId} />
+        </section>
         <McpSection servers={mcp} t={t} />
         <LspSection providers={lsp} t={t} />
         <TodoSection todos={todos ?? []} t={t} />

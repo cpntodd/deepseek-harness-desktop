@@ -41,6 +41,11 @@
 - id: ui-settings-models
   disabled: true
 
+# Desktop supplies the toggle-enabled inventory tab; disable the upstream
+# read-only inventory contribution.
+- id: ui-settings-plugin-inventory
+  disabled: true
+
 # The desktop owns the permission policy. The upstream base bundle derives the
 # sandbox-policy, approval, and permission rows from DSH_PERMISSION_MODE, which
 # the desktop never sets; replacing those rows here removes the upstream

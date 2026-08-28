@@ -53,7 +53,9 @@ import {
   handleDesktopTerminalOpenRequest,
 } from './desktop-settings-route.ts'
 import type {} from './desktop-settings-controller.ts'
-import { DESKTOP_STATUS_LSP_PROVIDERS_PATH } from './desktop-status-contract.ts'
+import { finishJson, isSameOriginLoopbackRequest } from './desktop-settings-route.ts'
+import type { DesktopMcp } from './desktop-mcp.ts'
+import { DESKTOP_STATUS_LSP_PROVIDERS_PATH, DESKTOP_STATUS_MCP_INSTALLATIONS_PATH } from './desktop-status-contract.ts'
 import { handleDesktopLspProvidersRequest } from './desktop-status-route.ts'
 import { desktopBootRecoveryInjections } from './desktop-boot-recovery.ts'
 import type { DesktopShellMode } from './runtime.ts'
@@ -97,6 +99,8 @@ export const DesktopSettingsSchema: z<DesktopSettings> = z.object({
 export interface Config {
   /** Native presentation mode selected before BrowserWindow construction. */
   mode: DesktopShellMode
+  /** Whether this Loader row exists only to publish the browser client bundle. */
+  clientOnly?: boolean
   /** Configured loopback Web port used to detect restart-applied settings changes. */
   port: number
   /** Initial window width in CSS pixels. */
@@ -112,6 +116,7 @@ export interface Config {
 /** Validated native window configuration. */
 export const Config: z<Config> = z.object({
   mode: z.union(['compatibility', 'advanced'] as const).default('compatibility'),
+  clientOnly: z.boolean().default(false),
   port: z.number().step(1).min(0).max(65_535).default(DESKTOP_DEFAULT_WEB_PORT),
   width: z.number().step(1).min(800).default(1280),
   height: z.number().step(1).min(600).default(840),
@@ -143,6 +148,7 @@ export function desktopRendererUrl(
  * @param config - validated native window values.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (config.clientOnly === true) return
   const runtime = ctx.get('desktopRuntime')
   if (runtime === undefined) {
     process.stderr.write(
@@ -222,6 +228,26 @@ export function apply(ctx: Context, config: Config): void {
       handler: (req, res) => handleDesktopLspProvidersRequest(req, res, rendererOrigin, ctx),
     }),
     'dsh-plugin-desktop: private LSP-provider status route',
+  )
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: DESKTOP_STATUS_MCP_INSTALLATIONS_PATH,
+      handler: (req, res) => {
+        if (!isSameOriginLoopbackRequest(req, rendererOrigin, false)) {
+          finishJson(res, 403, { error: 'forbidden' })
+          return
+        }
+        const mcp = ctx.get('desktopMcp') as DesktopMcp | undefined
+        finishJson(res, 200, { installations: mcp?.listMcpServers().map(server => ({
+          serverName: server.serverName,
+          displayName: server.displayName,
+          enabled: server.enabled,
+          installedAt: server.installedAt,
+        })) ?? [] })
+      },
+    }),
+    'dsh-plugin-desktop: private MCP status route',
   )
   ctx.effect(
     () => ctx.webServer.register({

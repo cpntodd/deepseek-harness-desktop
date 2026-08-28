@@ -8,6 +8,7 @@ import { DesktopTerminalSettingsAction } from './DesktopTerminalSettingsAction.t
 import { createDesktopSettingsApi } from './desktop-settings-api.ts'
 import { en, zh, type DesktopSettingsLocaleKey } from './desktop-settings-locales.ts'
 import { installDesktopSettingsStyles } from './desktop-settings-styles.ts'
+import { DesktopPluginListTab } from './DesktopPluginListTab.tsx'
 import type { DesktopClientEnvironment } from './environment.ts'
 
 /** Locale namespace owned by the Desktop settings page. */
@@ -64,4 +65,13 @@ export function applyDesktopSettings(ctx: ClientContext, environment: DesktopCli
     locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
     inject: () => ({ api }),
   }, DesktopTerminalSettingsAction))
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: 'all',
+    order: -10,
+    priority: -1,
+    label: () => t('pluginListTab'),
+    locale: DESKTOP_SETTINGS_LOCALE_NAMESPACE,
+    inject: () => ({ api }),
+  }, DesktopPluginListTab))
 }

@@ -69,6 +69,11 @@ export interface SubscriptionsSectionInjected {
   t: (key: SubscriptionsKey, params?: Record<string, unknown>) => string
 }
 
+/** Props for the active-chat usage dock, including its session owner snapshot. */
+export interface ActiveUsageMeterProps extends SubscriptionsSectionInjected {
+  readonly sessionId?: string
+}
+
 /**
  * Props delivered by the slot outlet: the inject face spread flat (the
  * renderer erases the share boundary at the render call).
@@ -611,8 +616,59 @@ export function SubscriptionProviderCard(props: SubscriptionProviderCardProps) {
  * package export. The combined Providers page composes these cards itself via
  * {@link useSubscriptionsAuth} + {@link SubscriptionProviderCard}.
  * @param props - the slot inject face ({@link SubscriptionsSectionInjected}).
- * @returns the section body, or a notice while the RPC face is absent.
+ * @returns the section body after the first completed lookup, or null before any provider data exists.
  */
+export function ActiveUsageMeter(props: ActiveUsageMeterProps) {
+  const { rpc, t, sessionId } = props
+  const [statuses, setStatuses] = useState<Partial<Record<SubscriptionProvider, ProviderStatus>>>({})
+  const [usages, setUsages] = useState<Partial<Record<SubscriptionProvider, ProviderUsage>>>({})
+  const [ready, setReady] = useState(false)
+  const refresh = useCallback(async () => {
+    try {
+      const status = await callSubscriptionsAuth<StatusResponse>(rpc, 'status', {})
+      setStatuses(status.providers)
+      const loggedIn = SUBSCRIPTION_PROVIDERS.filter(({ id }) => status.providers[id]?.loggedIn)
+      const next: Partial<Record<SubscriptionProvider, ProviderUsage>> = {}
+      await Promise.all(loggedIn.map(async ({ id }) => {
+        try { next[id] = await callSubscriptionsAuth<ProviderUsage>(rpc, 'usage', { provider: id }) } catch { /* retain the last good provider snapshot */ }
+      }))
+      setUsages(previous => ({ ...previous, ...next }))
+      setReady(true)
+    } catch { /* Keep the last successful meter snapshot during background refreshes. */
+      setReady(true)
+    }
+  }, [rpc])
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 20_000)
+    return () => window.clearInterval(timer)
+  }, [refresh, sessionId])
+  const loggedIn = SUBSCRIPTION_PROVIDERS.filter(({ id }) => statuses[id]?.loggedIn)
+  const providers = loggedIn.flatMap(({ id, name }) => ({ id, name, usage: usages[id] }))
+  if (!ready && providers.length === 0) return null
+  return <div className="dshDesktopUsageMeter" aria-label={t('usageTitle')}>
+    {providers.length === 0 && <div className="dshDesktopUsageMeterStatus">{t('notLoggedIn')}</div>}
+    {providers.map(({ id, name, usage }) => (
+      <div key={id} className="dshDesktopUsageMeterProvider">
+        <div className="dshDesktopUsageMeterProviderName">{name}</div>
+        {usage?.supported === false
+          ? <div className="dshDesktopUsageMeterStatus">{t('usageEmpty')}</div>
+          : (usage?.windows ?? []).length === 0
+            ? <div className="dshDesktopUsageMeterStatus">{t('usageEmpty')}</div>
+            : usage?.windows?.map((window, index) => {
+              const raw = Number.isFinite(window.usedPercent) ? window.usedPercent : 0
+              const percent = Math.min(100, Math.max(0, raw))
+              return <div key={`${id}:${window.kind}:${window.scope ?? ''}:${index}`} className="dshDesktopUsageMeterRow">
+                <span className="dshDesktopUsageMeterLabel">{usageWindowLabel(t, window)}</span>
+                <span className="dshDesktopUsageMeterTrack"><span className="dshDesktopUsageMeterFill" style={{ width: `${String(percent)}%`, background: usageBarColor(percent) }} /></span>
+                <span className="dshDesktopUsageMeterValue">{Math.round(percent)}%</span>
+              </div>
+            })}
+      </div>
+    ))}
+  </div>
+}
+
 export function SubscriptionsSection(props: SubscriptionsSectionProps) {
   const { rpc } = props
   const t = props.t ?? fallbackTranslate

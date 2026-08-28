@@ -1,4 +1,5 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from './contracts.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
@@ -64,7 +65,7 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
   }, AdvancedFrame), 'desktop: advanced root slot')
 
   // The desktop owns the right details surface in advanced mode: an agent
-  // status panel (MCP + LSP + Todo). It registers at a lower priority than the
+  // status panel (MCP + LSP + Todo + provider usage). It registers at a lower priority than the
   // upstream tool-call inspector so it shadows that occupant (slot shadowing).
   ctx.effect(
     () => ctx.locale.register('desktop.status', { en, zh }),
@@ -78,6 +79,10 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     name: 'details',
     priority: -1,
     locale: 'desktop.status',
-    inject: () => ({ closeDetails: () => { desktopLayout.closeDetails() } }),
+    inject: () => ({
+      closeDetails: () => { desktopLayout.closeDetails() },
+      rpc: (ctx.get('connection') as ConnectionHandle).rpc,
+      usageT: ctx.locale.bind('settings.subscriptions'),
+    }),
   }, AgentStatusPanel))
 }

@@ -49,6 +49,18 @@ body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
 body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] > span { display: inline-block; }
 body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] .sep { margin: 0 12px; }
 body[data-dsh-desktop-mode="advanced"] [data-conversation-scroll] { padding-bottom: 34px; }
+/* Keep the complete metrics sentence visible in every Desktop mode. The
+   composer may be narrow, so wrapping is preferred to an ellipsis. */
+[class*="StatsLine_root"] {
+  max-width: none !important;
+  width: 100% !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere;
+}
+[class*="StatsLine_root"] > span { display: inline !important; }
+[class*="StatsLine_root"] .sep { margin: 0 8px; }
 @media (max-width: 640px) {
   body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] { text-align: left; }
 }

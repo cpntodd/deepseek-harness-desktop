@@ -811,14 +811,17 @@ async function start(): Promise<void> {
           openTerminal: () => { runtime.openTerminal() },
           requestRestart: () => runtime.requestRestart(),
         })
+        // Plugin enable/disable management is a Desktop capability, not a
+        // community-market capability. The inventory must remain available when
+        // the market is disabled or another market provider is selected.
+        await hostCtx.plugin(DesktopPluginsService, {
+          profileName: activeProfileName,
+          homeDir,
+          statePath: pluginManagementStatePath,
+          recoveryStatePath: startupRecoveryStatePath,
+          installAnchor: desktopInstallAnchor(),
+        })
         if (prepared.market.effective === 'community-market') {
-          await hostCtx.plugin(DesktopPluginsService, {
-            profileName: activeProfileName,
-            homeDir,
-            statePath: pluginManagementStatePath,
-            recoveryStatePath: startupRecoveryStatePath,
-            installAnchor: desktopInstallAnchor(),
-          })
           await hostCtx.plugin(DesktopMcpService, {
             profileName: activeProfileName,
             statePath: mcpStatePath,

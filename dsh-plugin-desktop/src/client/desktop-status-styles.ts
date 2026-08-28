@@ -52,6 +52,10 @@ const CSS = `
   min-height: 0;
   overflow-y: auto;
 }
+.dshDesktopStatusUsageSection { gap: 6px; }
+.dshDesktopStatusUsageSection .dshDesktopUsageMeter {
+  padding-top: 0;
+}
 .dshDesktopStatusSection {
   display: flex;
   flex-direction: column;
