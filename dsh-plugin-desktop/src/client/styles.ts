@@ -42,13 +42,58 @@ body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
   border-top: 1px solid var(--dsw-alias-border-l2);
   background: color-mix(in srgb, var(--dsw-alias-bg-base) 96%, transparent);
   box-shadow: 0 -4px 14px color-mix(in srgb, var(--dsw-alias-bg-base) 55%, transparent);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   text-overflow: clip;
 }
-body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] > span { display: inline-block; }
-body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] .sep { margin: 0 12px; }
-body[data-dsh-desktop-mode="advanced"] [data-conversation-scroll] { padding-bottom: 34px; }
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] > span { display: inline !important; }
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] .sep { margin: 0 8px; }
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: baseline;
+  justify-content: center;
+  height: auto !important;
+  min-height: 20px !important;
+  max-height: none !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] > span {
+  display: inline-flex !important;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] .sep {
+  flex: 0 0 auto;
+}
+/* Keep the row in the composer flow. A fixed descendant is clipped by the
+   conversation surface when its wrapped height exceeds the original band. */
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
+  position: static !important;
+  inset: auto !important;
+  align-self: stretch;
+  flex: none;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 20px !important;
+  padding: 4px 16px 5px;
+  margin: 0;
+  box-sizing: border-box;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+body[data-dsh-desktop-mode="advanced"] [data-conversation-scroll] { padding-bottom: 0; }
 /* Keep the complete metrics sentence visible in every Desktop mode. The
    composer may be narrow, so wrapping is preferred to an ellipsis. */
 [class*="StatsLine_root"] {
