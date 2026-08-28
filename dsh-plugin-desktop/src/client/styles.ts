@@ -150,7 +150,12 @@ body[data-dsh-desktop-mode="advanced"] [data-conversation-scroll] { padding-bott
 [class*="StatsLine_root"] .sep { margin: 0 8px; }
 /* The original conversation stats dock is retired in advanced mode. The
    complete presentation is owned by AgentStatusPanel below Usage. */
-body[data-dsh-desktop-mode="advanced"] [data-slot="conversation.composer.dock"]:has([class*="StatsLine_root"]) {
+body[data-dsh-desktop-mode="advanced"] [data-slot="conversation.composer.dock"]:has([class*="StatsLine_root"]),
+body[data-dsh-desktop-mode="advanced"] [data-slot="conversation.composer.dock"] [class*="StatsLine_root"] {
+  display: none !important;
+}
+/* Final declaration wins over every upstream and compatibility rule above. */
+body[data-dsh-desktop-mode="advanced"] [class*="StatsLine_root"] {
   display: none !important;
 }
 @media (max-width: 640px) {
