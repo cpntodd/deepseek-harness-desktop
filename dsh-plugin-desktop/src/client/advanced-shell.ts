@@ -85,4 +85,12 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
       usageT: ctx.locale.bind('settings.subscriptions'),
     }),
   }, AgentStatusPanel))
+
+  // Replace the upstream stats cell through its documented slot id. The
+  // AgentStatusPanel owns the complete replacement presentation.
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name: 'conversation.composer.dock',
+    id: 'stats',
+    priority: -1,
+  }, () => null))
 }

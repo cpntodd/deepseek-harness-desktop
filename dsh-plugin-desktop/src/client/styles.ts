@@ -233,24 +233,5 @@ export function installAdvancedStyles(): () => void {
   style.textContent = ADVANCED_STYLES
   document.head.appendChild(style)
 
-  // The upstream conversation package can replace the dock node after each
-  // session projection update. Hide the mounted node imperatively as well as
-  // through CSS so the duplicate can never reappear between style recalculations.
-  const hideUpstreamStats = () => {
-    // StatsLine_root is the upstream conversation status bar. Agent Status uses
-    // dshDesktopStatusSessionStats and is deliberately not selected here.
-    document.querySelectorAll<HTMLElement>('[class*="StatsLine_root"]').forEach(element => {
-      element.style.setProperty('display', 'none', 'important')
-    })
-  }
-  hideUpstreamStats()
-  const observer = new MutationObserver(hideUpstreamStats)
-  observer.observe(document.body, { childList: true, subtree: true })
-  return () => {
-    observer.disconnect()
-    document.querySelectorAll<HTMLElement>('[class*="StatsLine_root"]').forEach(element => {
-      element.style.removeProperty('display')
-    })
-    style.remove()
-  }
+  return () => { style.remove() }
 }
